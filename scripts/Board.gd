@@ -176,6 +176,7 @@ func _attempt_dir(g: Gem, delta: Vector2) -> void:
 func _select(g: Gem) -> void:
 	_selected = g
 	g.set_selected(true)
+	Audio.play("select")
 
 
 func _clear_selection() -> void:
@@ -204,6 +205,7 @@ func _try_swap(a: Gem, b: Gem) -> void:
 	if a == null or b == null:
 		return
 	_busy = true
+	Audio.play("swap")
 	_swap_in_grid(a, b)
 	a.move_to(_cell_pos(a.col, a.row), 0.18)
 	b.move_to(_cell_pos(b.col, b.row), 0.18)
@@ -213,6 +215,7 @@ func _try_swap(a: Gem, b: Gem) -> void:
 	var has_special := a.special != Gem.NONE or b.special != Gem.NONE
 	if matches.is_empty() and not has_special:
 		# Invalid: swap back with a little shake.
+		Audio.play("invalid")
 		_swap_in_grid(a, b)
 		a.move_to(_cell_pos(a.col, a.row), 0.18)
 		b.move_to(_cell_pos(b.col, b.row), 0.18)
@@ -288,6 +291,8 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 
 		combo += 1
 		emit_signal("combo_changed", combo)
+		# Each cascade step rings a semitone higher — the satisfying combo ladder.
+		Audio.play("match", pow(2.0, min(combo - 1, 12) / 12.0))
 
 		# Decide which cells become new special pieces (don't clear those).
 		var survivors := {}    # Vector2i -> kind
@@ -322,6 +327,8 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 				g.pop()
 
 		# Forge the new specials.
+		if not survivors.is_empty():
+			Audio.play("special")
 		for cell in survivors:
 			var g: Gem = _grid[cell.x][cell.y]
 			if g:
@@ -380,6 +387,7 @@ func _expand_specials(matched: Dictionary) -> void:
 				queue.append(t)
 	if not done.is_empty():
 		_shake(5.0)
+		Audio.play("blast")
 
 
 # ----------------------------------------------------- gravity & refill ---
@@ -414,6 +422,8 @@ func _collapse_and_refill() -> void:
 			g.move_to(_cell_pos(c, r), dur, spawn * 0.02, Tween.TRANS_BOUNCE)
 			longest = max(longest, dur)
 			spawn += 1
+	# A soft thud when the wave of gems settles into place.
+	Audio.play("land", randf_range(0.95, 1.05), -4.0)
 	await get_tree().create_timer(longest + 0.05).timeout
 
 
@@ -466,6 +476,7 @@ func _cell_in_match(c: int, r: int) -> bool:
 
 func _reshuffle() -> void:
 	emit_signal("shuffled")
+	Audio.play("shuffle")
 	# Re-roll types in place until at least one move exists and no instant matches.
 	for _i in 40:
 		for c in COLS:

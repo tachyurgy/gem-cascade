@@ -64,6 +64,8 @@ func _build_hud() -> void:
 	subtitle.size = Vector2(W, 30)
 	layer.add_child(subtitle)
 
+	_build_mute_button(layer)
+
 	_score_lbl = _make_stat(layer, "SCORE", Vector2(40, 168), HORIZONTAL_ALIGNMENT_LEFT)
 	_moves_lbl = _make_stat(layer, "MOVES", Vector2(W - 240, 168), HORIZONTAL_ALIGNMENT_RIGHT)
 	_combo_lbl = Label.new()
@@ -76,6 +78,24 @@ func _build_hud() -> void:
 	_combo_lbl.size = Vector2(W, 48)
 	_combo_lbl.modulate.a = 0.0
 	layer.add_child(_combo_lbl)
+
+
+## A small speaker glyph in the top-right that toggles all sound.
+func _build_mute_button(parent: Node) -> void:
+	var btn := Button.new()
+	btn.flat = true
+	btn.text = "🔊"
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 30)
+	btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
+	btn.position = Vector2(W - 70, 44)
+	btn.size = Vector2(52, 52)
+	parent.add_child(btn)
+	btn.pressed.connect(func() -> void:
+		Audio.set_muted(not Audio.muted)
+		btn.text = "🔇" if Audio.muted else "🔊"
+		if not Audio.muted:
+			Audio.play("select"))
 
 
 func _make_stat(parent: Node, caption: String, pos: Vector2, align: int) -> Label:
