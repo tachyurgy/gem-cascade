@@ -249,10 +249,10 @@
       </figure>
     </div>
   </div>
-  <div class="note"><b>The thesis of this build.</b> The brief that prompted it asked for a Match-3 and
-  explicitly weighed <em>“the animation mechanics of the game pieces”</em> and <em>“in-game visual
-  effects.”</em> So the architecture optimises for exactly that: a clean game core that is easy to read,
-  and a disproportionate amount of care spent on motion and light.</div>
+  <div class="note"><b>The thesis of this build.</b> A match-3 lives or dies on how it <em>feels</em>.
+  So this one is engineered around the two things a player actually notices — the <em>animation of the
+  game pieces</em> and the <em>in-game visual effects</em> — and everything else serves that. The game
+  core is kept small and easy to read; the disproportionate care goes into motion and light.</div>
 </section>
 
 <!-- ============================================================ JUICE -->
@@ -586,7 +586,7 @@ _board.shuffled.<span class="f">connect</span>(_on_shuffled)
       <ul class="small">
         <li><b>Crisp at any resolution.</b> The shader runs per-pixel, so jewels are razor-sharp on a 4K phone with zero mip/scaling artifacts.</li>
         <li><b>Light &amp; selection are dynamic.</b> The gloss, lustre sweep and bloom halo are computed from <code>TIME</code> and a <code>selected</code> uniform — impossible to bake into a static sprite.</li>
-        <li><b>Tiny, legible repo.</b> The whole game is a few KB of text. The diff reads as pure engineering — exactly what a programming hire is judged on.</li>
+        <li><b>Tiny, legible repo.</b> The whole game is a few KB of text — the codebase reads as pure engineering, with the craft on full display rather than hidden in binary assets.</li>
         <li><b>Recolor for free.</b> Six gems, or sixteen, is one line of palette.</li>
       </ul>
     </div>
@@ -997,9 +997,14 @@ t.<span class="f">chain</span>().<span class="f">tween_callback</span>(lbl.queue
 </section>
 
 <footer>
-  <p><strong>Gem Cascade</strong> · Godot 4.6 · a Match-3 portfolio piece focused on animated game pieces
+  <p><strong>Gem Cascade</strong> · Godot 4.6 · a Match-3 piece focused on animated game pieces
   and in-game visual effects. Every visual in this game is generated in code and shaders — no sprite assets.</p>
-  <p class="toplink"><a href="#overview">↑ Back to top</a></p>
+  <p style="margin:14px 0 0;display:flex;flex-wrap:wrap;gap:18px">
+    <a href="https://gemcascade.levelbrook.com">▶ Play it live</a>
+    <a href="https://github.com/tachyurgy/gem-cascade">Source on GitHub ↗</a>
+    <a href="https://levelbrook.com/game-design/">More games by Levelbrook ↗</a>
+  </p>
+  <p class="toplink" style="margin-top:16px"><a href="#overview">↑ Back to top</a></p>
 </footer>
 
 </main>

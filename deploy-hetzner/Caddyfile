@@ -1,0 +1,8 @@
+:80 {
+	encode zstd gzip
+	route {
+		respond /up "ok" 200
+		root * /srv
+		file_server
+	}
+}

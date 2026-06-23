@@ -8,6 +8,12 @@ Everything you see is generated in code and shaders — there are no sprite asse
 That keeps the repo tiny and puts the emphasis where it belongs: on the motion and
 the juice.
 
+### ▶ [Play it in your browser → gemcascade.levelbrook.com](https://gemcascade.levelbrook.com)
+
+- 🎮 **Live game:** <https://gemcascade.levelbrook.com>
+- 📖 **How it works (illustrated write-up):** <https://gemcascade.levelbrook.com/how-it-works.html>
+- 🕹️ **More games by Levelbrook:** <https://levelbrook.com/game-design/>
+
 📖 **[Read the full write-up → `docs/HOW-IT-WORKS.html`](docs/HOW-IT-WORKS.html)** — a
 deep, illustrated tour of how the whole game works and, in detail, *how the
 animations and visual effects were made to look good* (the shader breakdown, the
