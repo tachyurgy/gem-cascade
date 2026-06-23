@@ -1,0 +1,31 @@
+; Engine configuration file.
+; Gem Cascade — a Match-3 portfolio piece (Godot 4.6)
+
+config_version=5
+
+[application]
+
+config/name="Gem Cascade"
+config/description="A juicy Match-3 mobile game showcasing animated pieces and in-game VFX."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.6", "Mobile")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/size/resizable=true
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=true
+
+[rendering]
+
+renderer/rendering_method="mobile"
+textures/canvas_textures/default_texture_filter=1
+environment/defaults/default_clear_color=Color(0.04, 0.05, 0.12, 1)
