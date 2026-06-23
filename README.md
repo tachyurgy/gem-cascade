@@ -8,6 +8,12 @@ Everything you see is generated in code and shaders — there are no sprite asse
 That keeps the repo tiny and puts the emphasis where it belongs: on the motion and
 the juice.
 
+📖 **[Read the full write-up → `docs/HOW-IT-WORKS.html`](docs/HOW-IT-WORKS.html)** — a
+deep, illustrated tour of how the whole game works and, in detail, *how the
+animations and visual effects were made to look good* (the shader breakdown, the
+lustre iteration story, the selection glow, tween-driven motion, particles, and the
+tuning numbers). Open it in a browser.
+
 ![Gem Cascade](docs/screenshot.png)
 
 ## Highlights — animation & VFX

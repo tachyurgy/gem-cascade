@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gem Cascade — How It Works</title>
+<style>
+  :root{
+    --bg:#0b0d1a; --bg2:#140d24; --panel:#15172a; --panel2:#1b1d34;
+    --ink:#e9ecf6; --muted:#9aa0bd; --faint:#6b7196; --line:#2a2d48;
+    --rose:#ff5c7a; --amber:#ffb020; --jade:#36e07a; --azure:#38bdf8;
+    --violet:#a78bfa; --diamond:#eef2ff; --accent:#ff5c7a;
+    --code-bg:#0e1020; --code-line:#23263f;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth;background:var(--bg)}   /* solid base → never flashes white */
+  body{
+    margin:0;font-family:var(--sans);color:var(--ink);line-height:1.62;
+    background:
+      radial-gradient(1100px 700px at 80% 0, rgba(167,139,250,.16), transparent 60%),
+      radial-gradient(900px 600px at 0 6%, rgba(56,189,248,.10), transparent 55%),
+      linear-gradient(160deg,var(--bg),var(--bg2));
+  }
+  a{color:var(--azure);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  .wrap{display:grid;grid-template-columns:268px minmax(0,1fr);gap:0;max-width:1280px;margin:0 auto}
+  /* ---- sidebar ---- */
+  nav.toc{
+    position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    padding:34px 22px 60px;border-right:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(20,13,36,.6),rgba(11,13,26,.3));
+    backdrop-filter:blur(6px);
+  }
+  nav.toc .badge{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+  nav.toc .gemmark{width:30px;height:30px;border-radius:8px;
+    background:conic-gradient(from 45deg,var(--rose),var(--amber),var(--jade),var(--azure),var(--violet),var(--rose));
+    box-shadow:0 0 18px rgba(255,92,122,.5);transform:rotate(45deg)}
+  nav.toc .title{font-weight:800;letter-spacing:.5px;font-size:15px}
+  nav.toc a{display:block;color:var(--muted);font-size:13.5px;padding:5px 10px;border-radius:7px;border-left:2px solid transparent}
+  nav.toc a:hover{color:var(--ink);background:rgba(255,255,255,.04);text-decoration:none}
+  nav.toc a.sub{padding-left:22px;font-size:12.5px;color:var(--faint)}
+  nav.toc .grp{margin-top:16px;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--faint);padding:0 10px 4px}
+
+  main{padding:54px clamp(22px,5vw,72px) 120px;min-width:0}
+  header.hero{margin-bottom:54px}
+  header.hero h1{font-size:clamp(36px,6vw,60px);line-height:1.02;margin:0 0 14px;letter-spacing:-1px;
+    background:linear-gradient(120deg,#fff 10%,var(--violet) 55%,var(--rose));-webkit-background-clip:text;background-clip:text;color:transparent}
+  header.hero .lede{font-size:19px;color:var(--muted);max-width:70ch}
+  .kit{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .chip{font-size:12.5px;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);
+    padding:5px 12px;border-radius:999px}
+  .chip b{color:var(--amber);font-weight:700}
+
+  section{margin:0 0 60px;scroll-margin-top:24px}
+  h2{font-size:30px;margin:0 0 6px;letter-spacing:-.5px;display:flex;align-items:center;gap:12px}
+  h2 .n{font-family:var(--mono);font-size:15px;color:var(--accent);background:rgba(255,92,122,.12);
+    border:1px solid rgba(255,92,122,.3);padding:3px 9px;border-radius:8px}
+  h3{font-size:20px;margin:30px 0 8px;color:#fff}
+  h4{font-size:15px;margin:22px 0 6px;color:var(--violet);text-transform:uppercase;letter-spacing:.6px}
+  .rule{height:1px;background:linear-gradient(90deg,var(--line),transparent);margin:8px 0 22px}
+  p{color:#cdd2e8;margin:12px 0}
+  p.small,li.small{font-size:14px;color:var(--muted)}
+  strong{color:#fff}
+  em{color:var(--amber);font-style:normal}
+  ul,ol{color:#cdd2e8}
+  li{margin:7px 0}
+
+  /* ---- code ---- */
+  pre{background:var(--code-bg);border:1px solid var(--code-line);border-left:3px solid var(--accent);
+    border-radius:12px;padding:18px 20px;overflow-x:auto;margin:16px 0;
+    font-family:var(--mono);font-size:13px;line-height:1.65;color:#d4d8f0;
+    box-shadow:0 16px 40px -24px rgba(0,0,0,.8)}
+  pre .c{color:#6f9c6a}      /* comment */
+  pre .k{color:#c792ea}      /* keyword */
+  pre .f{color:#82aaff}      /* function/name */
+  pre .s{color:#c3e88d}      /* string */
+  pre .n{color:#f78c6c}      /* number */
+  pre .t{color:#ffcb6b}      /* type */
+  code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.07);
+    padding:2px 6px;border-radius:5px;color:#ffd9a0}
+  pre code{background:none;padding:0;color:inherit}
+  .filetag{display:inline-block;font-family:var(--mono);font-size:11.5px;color:var(--faint);
+    margin:14px 0 -8px;letter-spacing:.4px}
+  .filetag::before{content:"▸ "}
+
+  /* ---- callouts ---- */
+  .note,.warn,.key{border-radius:12px;padding:14px 18px;margin:18px 0;font-size:14.5px;border:1px solid var(--line)}
+  .note{background:rgba(56,189,248,.07);border-color:rgba(56,189,248,.28)}
+  .warn{background:rgba(255,176,32,.07);border-color:rgba(255,176,32,.3)}
+  .key{background:rgba(54,224,122,.07);border-color:rgba(54,224,122,.3)}
+  .note b,.warn b,.key b{color:#fff}
+
+  /* ---- layout helpers ---- */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  .cols>*{min-width:0}            /* let pre blocks scroll instead of widening the track */
+  @media(max-width:860px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;min-width:0}
+  .card h4{margin-top:0}
+
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--faint);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.6px}
+  td code{font-size:12px}
+  tr:hover td{background:rgba(255,255,255,.02)}
+
+  /* ---- gem palette ---- */
+  .palette{display:flex;flex-wrap:wrap;gap:14px;margin:18px 0}
+  .swatch{display:flex;flex-direction:column;align-items:center;gap:7px;font-size:12px;color:var(--muted)}
+  .jewel{width:58px;height:58px;border-radius:14px;position:relative;overflow:hidden;
+    box-shadow:0 8px 22px -8px rgba(0,0,0,.7), inset 0 -8px 14px rgba(0,0,0,.35), inset 0 8px 12px rgba(255,255,255,.45)}
+  .jewel::after{content:"";position:absolute;width:20px;height:16px;left:9px;top:7px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.95),transparent 70%);filter:blur(1px)}
+  .jewel code{background:none;color:inherit;padding:0}
+
+  /* ---- scene tree ---- */
+  .tree{font-family:var(--mono);font-size:13px;line-height:1.9;background:var(--code-bg);
+    border:1px solid var(--code-line);border-radius:12px;padding:18px 22px;color:#c9cef0;overflow-x:auto}
+  .tree .node{color:var(--azure)}
+  .tree .scr{color:var(--faint)}
+  .tree .cmt{color:#6f9c6a}
+
+  /* ---- layer stack ---- */
+  .stack{display:flex;flex-direction:column;gap:6px;margin:18px 0}
+  .layer{display:grid;grid-template-columns:30px 168px 1fr;align-items:center;gap:14px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+  .layer .ix{font-family:var(--mono);color:var(--accent);font-size:13px}
+  .layer .nm{font-weight:700;color:#fff;font-size:14px}
+  .layer .ds{color:var(--muted);font-size:13px}
+
+  /* ---- before/after ---- */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:18px 0}
+  .ba>*{min-width:0}             /* same grid-blowout guard for the before/after panes */
+  @media(max-width:860px){.ba{grid-template-columns:1fr}}
+  .ba .col{border-radius:14px;padding:16px 18px;border:1px solid var(--line)}
+  .ba .bad{background:rgba(255,92,122,.06);border-color:rgba(255,92,122,.3)}
+  .ba .good{background:rgba(54,224,122,.06);border-color:rgba(54,224,122,.3)}
+  .ba h4{margin-top:0}
+  .ba .bad h4{color:var(--rose)} .ba .good h4{color:var(--jade)}
+
+  .heroshot{display:block;max-width:300px;width:100%;border-radius:22px;border:1px solid var(--line);
+    box-shadow:0 40px 90px -30px rgba(0,0,0,.9);margin:8px 0}
+  figure{margin:22px 0}
+  figcaption{font-size:12.5px;color:var(--faint);margin-top:8px}
+
+  .pipe{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:18px 0;font-size:13px}
+  .pipe .step{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 13px;color:#fff}
+  .pipe .arr{color:var(--accent);font-weight:800}
+
+  footer{border-top:1px solid var(--line);margin-top:40px;padding-top:24px;color:var(--faint);font-size:13px}
+  .toplink{font-size:12px;color:var(--faint)}
+
+  /* ---- mobile: collapse the two-column shell and the fixed inner grids ---- */
+  @media(max-width:760px){
+    .wrap{display:block}
+    nav.toc{position:static;height:auto;width:auto;overflow:visible;
+      border-right:none;border-bottom:1px solid var(--line)}
+    nav.toc a{display:inline-block;margin:2px 4px 2px 0}
+    nav.toc .grp{display:block}
+    main{padding:34px 20px 80px}
+    .layer{grid-template-columns:26px 1fr}
+    .layer .ix{grid-row:span 2}        /* index spans both rows; name+desc stack */
+    table{display:block;overflow-x:auto;white-space:nowrap}
+    td,th{white-space:normal}
+    .heroshot{max-width:100%}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav class="toc">
+  <div class="badge"><div class="gemmark"></div><div class="title">GEM&nbsp;CASCADE</div></div>
+  <a href="#overview">Overview</a>
+  <a href="#juice">The philosophy of “juice”</a>
+
+  <div class="grp">How the game works</div>
+  <a href="#architecture">1 · Architecture</a>
+  <a href="#model">2 · Data model &amp; game loop</a>
+  <a href="#input">3 · Input &amp; swapping</a>
+  <a href="#matching">4 · Matching &amp; cascades</a>
+  <a href="#gravity">5 · Gravity &amp; refill</a>
+  <a href="#specials">6 · Special blast pieces</a>
+  <a href="#nomoves">7 · No-moves &amp; reshuffle</a>
+  <a href="#scoring">8 · Scoring &amp; combos</a>
+
+  <div class="grp">How the animation looks good</div>
+  <a href="#why-procedural">9 · Why procedural</a>
+  <a href="#gem-shader">10 · The gem shader</a>
+  <a href="#lustre" class="sub">10a · Getting the lustre right</a>
+  <a href="#selection" class="sub">10b · The selection glow</a>
+  <a href="#tweens">11 · Tween-driven motion</a>
+  <a href="#particles">12 · Particle bursts</a>
+  <a href="#shake">13 · Screen shake</a>
+  <a href="#popups">14 · Score popups</a>
+  <a href="#hud">15 · HUD pulse</a>
+  <a href="#background">16 · The background</a>
+
+  <div class="grp">Reference</div>
+  <a href="#tuning">Tuning numbers</a>
+  <a href="#performance">Performance &amp; mobile</a>
+  <a href="#filemap">File map</a>
+  <a href="#verify">How it was verified</a>
+</nav>
+
+<main>
+<header class="hero">
+  <h1>Gem Cascade</h1>
+  <p class="lede">A complete, mobile-first <strong>Match-3</strong> game built in <strong>Godot&nbsp;4.6</strong>.
+  This document explains <em>how the whole game works</em> — and, in depth, <em>how the animations and
+  visual effects were made to look good</em>. Every gem you see is drawn by a shader; there is not a
+  single sprite asset in the project.</p>
+  <div class="kit">
+    <span class="chip">Engine <b>Godot 4.6.1</b></span>
+    <span class="chip">Language <b>GDScript</b></span>
+    <span class="chip">Rendering <b>Mobile / Metal</b></span>
+    <span class="chip">Resolution <b>720×1280 portrait</b></span>
+    <span class="chip">Assets <b>Zero (fully procedural)</b></span>
+    <span class="chip">Files <b>3 scripts · 2 shaders</b></span>
+  </div>
+</header>
+
+<!-- ============================================================ OVERVIEW -->
+<section id="overview">
+  <h2><span class="n">·</span> Overview</h2>
+  <div class="rule"></div>
+  <div class="cols">
+    <div>
+      <p>Gem Cascade is the classic swap-to-match-three loop, polished for touch: you swap two
+      adjacent jewels, lines of three-or-more clear in a shower of particles, everything above
+      falls to fill the gap, and fresh gems pour in from the top — often triggering <strong>chain
+      reactions</strong> that the game rewards with rising combos, score pop-ups and a screen shake
+      that grows with the combo.</p>
+
+      <p>The entire thing is built from <strong>three scripts and two shaders</strong>:</p>
+      <ul>
+        <li><code>Game.gd</code> — the root: builds the animated background, the HUD, and the board, then keeps the HUD in sync.</li>
+        <li><code>Board.gd</code> — the brain: the grid, input, match detection, cascades, gravity, specials, and all timing.</li>
+        <li><code>Gem.gd</code> — one jewel: its shader visual, its particle burst, and its personal animations.</li>
+        <li><code>gem.gdshader</code> / <code>background.gdshader</code> — the look.</li>
+      </ul>
+    </div>
+    <div>
+      <figure>
+        <img class="heroshot" src="screenshot.png" alt="Gem Cascade in motion — a 7×8 board of glossy jewels mid-cascade.">
+        <figcaption>A live frame: 7×8 board, mid-game, one gem selected (note the bloom halo on the left), HUD tracking score and moves.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="note"><b>The thesis of this build.</b> The brief that prompted it asked for a Match-3 and
+  explicitly weighed <em>“the animation mechanics of the game pieces”</em> and <em>“in-game visual
+  effects.”</em> So the architecture optimises for exactly that: a clean game core that is easy to read,
+  and a disproportionate amount of care spent on motion and light.</div>
+</section>
+
+<!-- ============================================================ JUICE -->
+<section id="juice">
+  <h2><span class="n">★</span> The philosophy of “juice”</h2>
+  <div class="rule"></div>
+  <p>“Juice” is the game-feel term for the layer of feedback that has no effect on the rules but makes
+  every action <em>feel</em> physical and rewarding. A match that simply deletes three squares is correct;
+  a match that flashes, bursts into colored sparks, drops a floating <code>+90</code>, and nudges the
+  whole board feels <strong>good</strong>. Gem Cascade follows a few consistent principles:</p>
+  <div class="cols">
+    <div class="card">
+      <h4>Nothing teleports</h4>
+      <p class="small">Every position change is a tween with easing. Gems slide on swap, fall with a
+      bounce, and pour in from above. State changes you can’t see are state changes that feel broken.</p>
+    </div>
+    <div class="card">
+      <h4>Overshoot, then settle</h4>
+      <p class="small">Selections and forges use <code>BACK</code> / <code>ELASTIC</code> easing — they
+      bloom slightly past their target and spring back. A linear lerp reads as “weak”; an overshoot reads as “alive.”</p>
+    </div>
+    <div class="card">
+      <h4>Reward escalates</h4>
+      <p class="small">A bigger match and a deeper cascade should be visibly, audibly bigger:
+      the combo multiplier, the pop-up font size, and the screen-shake amplitude all scale with the chain.</p>
+    </div>
+    <div class="card">
+      <h4>Light moves</h4>
+      <p class="small">Even at rest the board breathes — a slow lustre sweeps across each jewel and the
+      background gradient drifts, so a paused screen never looks dead.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ ARCHITECTURE -->
+<section id="architecture">
+  <h2><span class="n">1</span> Architecture &amp; scene graph</h2>
+  <div class="rule"></div>
+  <p>There is a single real scene file, <code>scenes/Main.tscn</code>, holding one node with
+  <code>Game.gd</code> attached. <strong>Everything else is created in code.</strong> Authoring the board,
+  the HUD and 56 gems in <code>.tscn</code> files would mean hand-managing dozens of node UIDs; building
+  them from script is cleaner, diff-friendly, and keeps the whole project legible.</p>
+
+  <div class="tree">
+<span class="node">Game</span> <span class="scr">(Node2D · Game.gd)</span>
+├─ <span class="node">CanvasLayer</span> <span class="cmt">// layer -10 — sits behind everything</span>
+│   └─ <span class="node">ColorRect</span> <span class="scr">background.gdshader</span>
+├─ <span class="node">CanvasLayer</span> <span class="cmt">// layer 5 — HUD, never shakes with the board</span>
+│   ├─ <span class="node">Label</span> "GEM CASCADE"  <span class="cmt">// title</span>
+│   ├─ <span class="node">Label</span> "swipe or tap…" <span class="cmt">// subtitle</span>
+│   ├─ <span class="node">VBox</span> SCORE / value
+│   ├─ <span class="node">VBox</span> MOVES / value
+│   └─ <span class="node">Label</span> COMBO x_!        <span class="cmt">// fades in on combos</span>
+└─ <span class="node">Board</span> <span class="scr">(Node2D · Board.gd)</span>
+    ├─ <span class="node">Panel</span> <span class="cmt">// rounded play-field backing</span>
+    └─ <span class="node">Gem</span> ×56 <span class="scr">(Node2D · Gem.gd)</span>
+        ├─ <span class="node">Sprite2D</span> <span class="scr">gem.gdshader (per-instance material)</span>
+        └─ <span class="node">GPUParticles2D</span> <span class="cmt">// one-shot clear burst</span>
+  </div>
+
+  <h3>Why the HUD lives on its own CanvasLayer</h3>
+  <p>The board physically moves when it shakes (we tween <code>Board.position</code>). If the score and
+  title were children of the board, they would shake too. Putting the HUD on a separate
+  <code>CanvasLayer</code> isolates it, so the playfield can rattle while the text stays rock-steady.</p>
+
+  <h3>Signal flow</h3>
+  <p>The board never touches the HUD directly. It emits four signals; <code>Game.gd</code> listens and
+  updates labels. This keeps the game logic completely unaware of presentation.</p>
+  <div class="filetag">scripts/Board.gd</div>
+<pre><span class="k">signal</span> <span class="f">score_changed</span>(total: <span class="t">int</span>)
+<span class="k">signal</span> <span class="f">combo_changed</span>(combo: <span class="t">int</span>)
+<span class="k">signal</span> <span class="f">moves_changed</span>(moves: <span class="t">int</span>)
+<span class="k">signal</span> <span class="f">shuffled</span>()</pre>
+
+  <div class="warn"><b>A subtle ordering bug worth remembering.</b> In Godot,
+  <code>add_child(node)</code> runs that node’s <code>_ready()</code> <em>immediately</em>. The board emits
+  its starting <code>moves = 30</code> inside <code>_ready()</code> — so if you <code>add_child(board)</code>
+  <em>before</em> connecting the signal, the HUD misses that first emit and shows “0”. The fix is to
+  <strong>connect every signal first, then add the board to the tree:</strong></p>
+  <div class="filetag">scripts/Game.gd</div>
+<pre>_board = <span class="t">Board</span>.<span class="f">new</span>()
+<span class="c"># Connect BEFORE add_child: add_child runs Board._ready(), which</span>
+<span class="c"># emits the initial score/moves — we must already be listening.</span>
+_board.score_changed.<span class="f">connect</span>(_on_score)
+_board.moves_changed.<span class="f">connect</span>(_on_moves)
+_board.combo_changed.<span class="f">connect</span>(_on_combo)
+_board.shuffled.<span class="f">connect</span>(_on_shuffled)
+<span class="f">add_child</span>(_board)</pre>
+</section>
+
+<!-- ============================================================ MODEL -->
+<section id="model">
+  <h2><span class="n">2</span> Data model &amp; the game loop</h2>
+  <div class="rule"></div>
+  <p>The board is a <strong>7&nbsp;columns × 8&nbsp;rows</strong> grid of 96-pixel cells. The model is a
+  single 2-D array, <code>_grid[col][row]</code>, holding either a <code>Gem</code> or <code>null</code>.
+  Each <code>Gem</code> also stores its own <code>col</code>/<code>row</code> so it knows where it belongs.</p>
+
+  <table>
+    <tr><th>Constant</th><th>Value</th><th>Meaning</th></tr>
+    <tr><td><code>COLS × ROWS</code></td><td>7 × 8</td><td>Board dimensions (56 gems)</td></tr>
+    <tr><td><code>CELL</code></td><td>96 px</td><td>Grid spacing</td></tr>
+    <tr><td><code>GEM_SIZE</code></td><td>84 px</td><td>Visual gem size (smaller than the cell → gutters)</td></tr>
+    <tr><td><code>NUM_TYPES</code></td><td>6</td><td>Distinct gem colors</td></tr>
+    <tr><td><code>START_MOVES</code></td><td>30</td><td>Moves the player begins with</td></tr>
+  </table>
+
+  <h3>World ↔ grid geometry</h3>
+  <p>One function maps a grid cell to a screen position; its inverse maps a touch point back to a cell.
+  The board is centered horizontally and pushed below the HUD with a fixed origin.</p>
+<pre><span class="k">func</span> <span class="f">_cell_pos</span>(c, r) -> <span class="t">Vector2</span>:
+    <span class="k">return</span> _origin + <span class="t">Vector2</span>(c * CELL, r * CELL)
+
+<span class="k">func</span> <span class="f">_gem_at_point</span>(p) -> <span class="t">Gem</span>:
+    <span class="k">var</span> local = p - _origin + <span class="t">Vector2</span>(CELL, CELL) * <span class="n">0.5</span>
+    <span class="k">var</span> c = <span class="f">int</span>(<span class="f">floor</span>(local.x / CELL))
+    <span class="k">var</span> r = <span class="f">int</span>(<span class="f">floor</span>(local.y / CELL))
+    <span class="k">if</span> c &lt; <span class="n">0</span> <span class="k">or</span> c &gt;= COLS <span class="k">or</span> r &lt; <span class="n">0</span> <span class="k">or</span> r &gt;= ROWS: <span class="k">return null</span>
+    <span class="k">return</span> _grid[c][r]</pre>
+
+  <h3>The central loop</h3>
+  <p>Almost the entire game lives inside one re-entrant async method, <code>_resolve()</code>, that runs
+  after every valid swap. It loops until the board is stable:</p>
+  <div class="pipe">
+    <span class="step">find runs</span><span class="arr">→</span>
+    <span class="step">none? exit</span><span class="arr">→</span>
+    <span class="step">combo++</span><span class="arr">→</span>
+    <span class="step">forge specials</span><span class="arr">→</span>
+    <span class="step">expand blasts</span><span class="arr">→</span>
+    <span class="step">score + shake + popup</span><span class="arr">→</span>
+    <span class="step">pop gems</span><span class="arr">→</span>
+    <span class="step">gravity + refill</span><span class="arr">↺</span>
+  </div>
+  <p>Because each iteration <code>await</code>s its animations, the loop naturally paces itself to the
+  visuals: a 4-deep cascade plays as four distinct, satisfying beats rather than one instant collapse.
+  A single boolean, <code>_busy</code>, blocks input for the whole sequence so the player can’t desync the board.</p>
+</section>
+
+<!-- ============================================================ INPUT -->
+<section id="input">
+  <h2><span class="n">3</span> Input &amp; swapping</h2>
+  <div class="rule"></div>
+  <p>The board accepts <strong>both interaction styles players expect</strong>, from one
+  <code>_unhandled_input</code> handler that reads touch events (the project enables
+  <em>emulate_touch_from_mouse</em>, so the very same code works with a mouse on desktop and a finger on a phone):</p>
+  <ul>
+    <li><strong>Swipe</strong> — press a gem and drag past 45% of a cell; the dominant axis picks the neighbor to swap with.</li>
+    <li><strong>Tap-tap</strong> — tap a gem to select it (it starts breathing), then tap an adjacent gem to swap. Tapping it again deselects; tapping a far gem reselects.</li>
+  </ul>
+<pre><span class="k">func</span> <span class="f">_unhandled_input</span>(event):
+    <span class="k">if</span> _busy: <span class="k">return</span>                 <span class="c"># ignore input mid-animation</span>
+    <span class="k">if</span> event <span class="k">is</span> <span class="t">InputEventScreenTouch</span>:
+        <span class="k">if</span> event.pressed:
+            _press_gem = <span class="f">_gem_at_point</span>(event.position)
+            _press_pos = event.position
+            _swiped = <span class="k">false</span>
+        <span class="k">else</span>:
+            <span class="f">_on_release</span>(event.position)
+    <span class="k">elif</span> event <span class="k">is</span> <span class="t">InputEventScreenDrag</span> <span class="k">and</span> _press_gem <span class="k">and not</span> _swiped:
+        <span class="k">var</span> delta: <span class="t">Vector2</span> = event.position - _press_pos
+        <span class="k">if</span> delta.<span class="f">length</span>() &gt; CELL * <span class="n">0.45</span>:
+            _swiped = <span class="k">true</span>
+            <span class="f">_attempt_dir</span>(_press_gem, delta)</pre>
+  <div class="note"><b>GDScript gotcha baked in.</b> <code>var delta := event.position - …</code> fails to
+  compile — after an <code>is</code> check the static type isn’t narrowed, so the type can’t be inferred.
+  Declaring it explicitly as <code>Vector2</code> fixes it.</div>
+
+  <h3>The swap, and the “no” animation</h3>
+  <p>A swap optimistically exchanges the two gems in the grid and tweens them into place. Then it checks
+  for matches. If there are none (and neither piece is a special), it was an illegal move — so it swaps
+  them <strong>back</strong>, and that little there-and-back is itself the feedback that says “nope.”
+  Only a <em>successful</em> swap costs a move.</p>
+<pre><span class="k">func</span> <span class="f">_try_swap</span>(a, b):
+    _busy = <span class="k">true</span>
+    <span class="f">_swap_in_grid</span>(a, b)
+    a.<span class="f">move_to</span>(<span class="f">_cell_pos</span>(a.col, a.row), <span class="n">0.18</span>)
+    b.<span class="f">move_to</span>(<span class="f">_cell_pos</span>(b.col, b.row), <span class="n">0.18</span>)
+    <span class="k">await</span> get_tree().<span class="f">create_timer</span>(<span class="n">0.20</span>).timeout
+
+    <span class="k">if</span> <span class="f">_find_matches</span>().<span class="f">is_empty</span>() <span class="k">and not</span> has_special:
+        <span class="f">_swap_in_grid</span>(a, b)            <span class="c"># put them back…</span>
+        a.<span class="f">move_to</span>(…); b.<span class="f">move_to</span>(…)  <span class="c"># …and slide back: the "invalid" tell</span>
+        _busy = <span class="k">false</span>
+        <span class="k">return</span>
+
+    _moves -= <span class="n">1</span>
+    <span class="f">emit_signal</span>(<span class="s">"moves_changed"</span>, _moves)
+    <span class="k">await</span> <span class="f">_resolve</span>(a, b)
+    _busy = <span class="k">false</span></pre>
+</section>
+
+<!-- ============================================================ MATCHING -->
+<section id="matching">
+  <h2><span class="n">4</span> Matching &amp; cascades</h2>
+  <div class="rule"></div>
+  <p>Match detection scans the grid for <strong>runs</strong>: 3-or-more same-colored gems in a row or
+  column. <code>_find_runs()</code> walks each row and each column once, collecting maximal runs of length
+  ≥&nbsp;3. Each run records its cells, length, and orientation — the length is what later decides whether
+  a <em>special</em> piece is forged.</p>
+<pre><span class="c"># Horizontal pass (the vertical pass is the mirror image)</span>
+<span class="k">for</span> r <span class="k">in</span> ROWS:
+    <span class="k">var</span> c = <span class="n">0</span>
+    <span class="k">while</span> c &lt; COLS:
+        <span class="k">var</span> g = _grid[c][r]
+        <span class="k">if</span> g == <span class="k">null</span>: c += <span class="n">1</span>; <span class="k">continue</span>
+        <span class="k">var</span> run = [<span class="t">Vector2i</span>(c, r)]
+        <span class="k">var</span> cc = c + <span class="n">1</span>
+        <span class="k">while</span> cc &lt; COLS <span class="k">and</span> _grid[cc][r] <span class="k">and</span> _grid[cc][r].type == g.type:
+            run.<span class="f">append</span>(<span class="t">Vector2i</span>(cc, r)); cc += <span class="n">1</span>
+        <span class="k">if</span> run.<span class="f">size</span>() &gt;= <span class="n">3</span>:
+            runs.<span class="f">append</span>({<span class="s">"cells"</span>: run, <span class="s">"len"</span>: run.<span class="f">size</span>(), <span class="s">"horiz"</span>: <span class="k">true</span>})
+        c = cc</pre>
+
+  <h3>Cascades for free</h3>
+  <p>Because <code>_resolve()</code> re-runs <code>_find_runs()</code> at the top of every loop iteration,
+  cascades require <em>no special code</em>. Clear some gems → gravity drops the survivors and pours new
+  ones in → the loop runs again → if the new arrangement made fresh matches, they clear too, with the combo
+  counter one higher. The loop only exits when a full pass finds nothing. Each pass is separated by short
+  <code>await</code>s, so a deep chain reads as a rhythmic series of pops rather than a blur.</p>
+</section>
+
+<!-- ============================================================ GRAVITY -->
+<section id="gravity">
+  <h2><span class="n">5</span> Gravity &amp; refill</h2>
+  <div class="rule"></div>
+  <p>After gems are cleared, <code>_collapse_and_refill()</code> processes each column independently in two steps:</p>
+  <ol>
+    <li><strong>Compact down.</strong> Walk the column bottom-to-top with a <code>write</code> cursor.
+    Each surviving gem is moved to the lowest empty slot and tweened there. Gems that fall further travel
+    longer — the duration scales with distance (<code>0.16 + dist × 0.035</code>) so they all <em>land</em>
+    in a believable spread rather than snapping together.</li>
+    <li><strong>Refill from above.</strong> Whatever space is left at the top is filled with brand-new gems
+    spawned <em>off-screen above the board</em>, then tweened down into place with a stagger.</li>
+  </ol>
+  <p>Both motions use <code>TRANS_BOUNCE</code> easing, so gems hit their slot and visibly bounce — the
+  single biggest contributor to the board feeling like physical objects instead of a spreadsheet.</p>
+<pre>    <span class="k">var</span> dist = write - r
+    g.<span class="f">move_to</span>(<span class="f">_cell_pos</span>(c, write), <span class="n">0.16</span> + dist * <span class="n">0.035</span>, <span class="n">0.0</span>, <span class="t">Tween</span>.TRANS_BOUNCE)
+    …
+    <span class="c"># new gems pour in from above with a per-gem stagger</span>
+    g.position = <span class="f">_cell_pos</span>(c, -<span class="n">1</span> - spawn)
+    g.<span class="f">move_to</span>(<span class="f">_cell_pos</span>(c, r), <span class="n">0.28</span> + (r + spawn) * <span class="n">0.03</span>, spawn * <span class="n">0.02</span>, <span class="t">Tween</span>.TRANS_BOUNCE)</pre>
+  <p>The method tracks the longest tween it scheduled and awaits exactly that long — so the resolve loop
+  resumes the instant the slowest gem has landed, never sooner (which would clip the animation) and never
+  on a fixed guess (which would stutter).</p>
+</section>
+
+<!-- ============================================================ SPECIALS -->
+<section id="specials">
+  <h2><span class="n">6</span> Special blast pieces</h2>
+  <div class="rule"></div>
+  <p>Matching more than three forges a <strong>special</strong> at one surviving cell instead of clearing
+  it. Specials are the spectacle pieces — they’re what turns a good chain into a fireworks show.</p>
+  <table>
+    <tr><th>Made by</th><th>Special</th><th>When matched, it clears…</th></tr>
+    <tr><td>Match of <b>4</b></td><td><code>STRIPE</code></td><td>its entire row <em>and</em> column</td></tr>
+    <tr><td>Match of <b>5+</b></td><td><code>BOMB</code> (color bomb)</td><td>every gem on the board of its color</td></tr>
+  </table>
+
+  <h3>Choosing the survivor</h3>
+  <p>When a run is long enough to forge a special, which gem becomes it? Preferably the one the player just
+  moved — it feels causal. <code>_pick_survivor()</code> looks for the swapped gem inside the run and keeps
+  it; otherwise it falls back to the middle of the run. That cell is removed from the clear-set so it
+  survives, then upgraded with <code>set_special()</code> (which plays an elastic “forge” pop).</p>
+
+  <h3>Chain-triggering blasts (a tiny BFS)</h3>
+  <p>The interesting case is when a blast is itself caught in a match — or when one blast’s area-clear
+  catches <em>another</em> blast. <code>_expand_specials()</code> handles this with a breadth-first search:
+  seed a queue with every special in the current clear-set, and for each one add the cells it destroys; if
+  any of those cells holds another special, queue it too. The clear-set grows until no new blasts are
+  reached, and a <code>_shake()</code> punctuates the chain.</p>
+<pre><span class="k">while not</span> queue.<span class="f">is_empty</span>():
+    <span class="k">var</span> cell = queue.<span class="f">pop_back</span>()
+    <span class="k">if</span> g.special == <span class="t">Gem</span>.STRIPE:
+        <span class="k">for</span> c <span class="k">in</span> COLS: targets.<span class="f">append</span>(<span class="t">Vector2i</span>(c, cell.y))   <span class="c"># whole row</span>
+        <span class="k">for</span> r <span class="k">in</span> ROWS: targets.<span class="f">append</span>(<span class="t">Vector2i</span>(cell.x, r))   <span class="c"># whole column</span>
+    <span class="k">elif</span> g.special == <span class="t">Gem</span>.BOMB:
+        <span class="k">for</span> c,r <span class="k">in</span> grid: <span class="k">if</span> type matches: targets.<span class="f">append</span>(…)  <span class="c"># every same-color gem</span>
+    <span class="k">for</span> t <span class="k">in</span> targets:
+        matched[t] = <span class="k">true</span>
+        <span class="k">if</span> grid[t] <span class="k">is</span> special <span class="k">and not</span> done: queue.<span class="f">append</span>(t)  <span class="c"># chain!</span></pre>
+  <p class="small">The shader draws the two specials distinctly: a stripe gets a bright horizontal bar; a
+  color bomb gets a pulsing white core (see §10).</p>
+</section>
+
+<!-- ============================================================ NO MOVES -->
+<section id="nomoves">
+  <h2><span class="n">7</span> No-moves detection &amp; reshuffle</h2>
+  <div class="rule"></div>
+  <p>After each resolve, the board checks whether any legal move still exists. <code>_has_possible_move()</code>
+  virtually tries every adjacent swap on the live grid and asks “would this create a 3-run?” — restoring the
+  grid immediately afterward. The same routine (<code>_swap_makes_match</code>) powers the swipe/tap legality
+  check, so there’s one source of truth.</p>
+<pre><span class="k">func</span> <span class="f">_swap_makes_match</span>(c1, r1, c2, r2) -> <span class="t">bool</span>:
+    <span class="c"># swap on the real grid, test, swap back — no allocation, no copy</span>
+    _grid[c1][r1] = b; _grid[c2][r2] = a
+    <span class="k">var</span> found = <span class="f">_cell_in_match</span>(c1, r1) <span class="k">or</span> <span class="f">_cell_in_match</span>(c2, r2)
+    _grid[c1][r1] = a; _grid[c2][r2] = b
+    <span class="k">return</span> found</pre>
+  <p>If no move exists, <code>_reshuffle()</code> re-rolls every gem’s color (retrying until the new board
+  has at least one move and no free matches), then dissolves and re-pours the whole board with the same
+  staggered entrance used at startup — and the HUD flashes <em>“NO MOVES — SHUFFLE!”</em>.</p>
+</section>
+
+<!-- ============================================================ SCORING -->
+<section id="scoring">
+  <h2><span class="n">8</span> Scoring &amp; combos</h2>
+  <div class="rule"></div>
+  <p>Score is deliberately simple and <strong>multiplicative on the combo</strong>, so cascades are where
+  the points are:</p>
+<pre><span class="k">var</span> gained = matched.<span class="f">size</span>() * <span class="n">30</span> * combo</pre>
+  <p>The first clear of a move is <code>combo = 1</code>; each additional cascade step bumps it. So clearing
+  three gems three times in a chain is worth far more than clearing nine at once. The combo number is the
+  spine that the visuals hang off:</p>
+  <ul>
+    <li><strong>The pop-up</strong> shows <code>+amount</code>, and from combo 2 it appends <code>×combo</code> and grows its font.</li>
+    <li><strong>The screen shake</strong> fires from combo 2, with amplitude <code>min(2 + combo, 8)</code>.</li>
+    <li><strong>The HUD combo banner</strong> fades in with a spring pop and fades out a beat later.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ WHY PROCEDURAL -->
+<section id="why-procedural">
+  <h2><span class="n">9</span> Why the art is 100% procedural</h2>
+  <div class="rule"></div>
+  <p>There are no PNGs of gems. Each jewel is a quad with a fragment shader that draws the gem in real
+  time, tinted by a single per-instance <code>base_color</code> uniform. Even the particle and gem
+  textures are generated in code at load (an 8×8 white square; a 32×32 soft radial dot).</p>
+  <div class="cols">
+    <div class="card"><h4>Why it’s the right call here</h4>
+      <ul class="small">
+        <li><b>Crisp at any resolution.</b> The shader runs per-pixel, so jewels are razor-sharp on a 4K phone with zero mip/scaling artifacts.</li>
+        <li><b>Light &amp; selection are dynamic.</b> The gloss, lustre sweep and bloom halo are computed from <code>TIME</code> and a <code>selected</code> uniform — impossible to bake into a static sprite.</li>
+        <li><b>Tiny, legible repo.</b> The whole game is a few KB of text. The diff reads as pure engineering — exactly what a programming hire is judged on.</li>
+        <li><b>Recolor for free.</b> Six gems, or sixteen, is one line of palette.</li>
+      </ul>
+    </div>
+    <div class="card"><h4>The shared textures</h4>
+      <p class="small">Two textures are built once and reused by every gem (lazy <code>static</code> fields):</p>
+<pre><span class="k">static func</span> <span class="f">_dot_tex</span>():           <span class="c"># soft particle sprite</span>
+    <span class="k">for</span> y,x <span class="k">in</span> 32×32:
+        <span class="k">var</span> a = <span class="f">clamp</span>(<span class="n">1</span> - dist, <span class="n">0</span>, <span class="n">1</span>)
+        a = a * a                  <span class="c"># square it → soft falloff</span>
+        img.<span class="f">set_pixel</span>(x, y, <span class="t">Color</span>(<span class="n">1</span>,<span class="n">1</span>,<span class="n">1</span>, a))</pre>
+    </div>
+  </div>
+  <div class="palette">
+    <div class="swatch"><div class="jewel" style="background:radial-gradient(circle at 35% 30%,#ffd0da,#ff5c7a 70%)"></div><code>#ff5c7a</code> rose</div>
+    <div class="swatch"><div class="jewel" style="background:radial-gradient(circle at 35% 30%,#ffe3b0,#ffb020 70%)"></div><code>#ffb020</code> amber</div>
+    <div class="swatch"><div class="jewel" style="background:radial-gradient(circle at 35% 30%,#b6f5d2,#36e07a 70%)"></div><code>#36e07a</code> jade</div>
+    <div class="swatch"><div class="jewel" style="background:radial-gradient(circle at 35% 30%,#bfe9ff,#38bdf8 70%)"></div><code>#38bdf8</code> azure</div>
+    <div class="swatch"><div class="jewel" style="background:radial-gradient(circle at 35% 30%,#ddd2ff,#a78bfa 70%)"></div><code>#a78bfa</code> violet</div>
+    <div class="swatch"><div class="jewel" style="background:radial-gradient(circle at 35% 30%,#ffffff,#cfd8f5 70%)"></div><code>#eef2ff</code> diamond</div>
+  </div>
+  <p class="small">The palette was chosen for <strong>maximum hue separation</strong> (color-blind-friendlier than the usual red/green/blue trio) so matches read instantly. The CSS jewels above are an approximation; the real ones are shaded by the fragment shader below.</p>
+</section>
+
+<!-- ============================================================ GEM SHADER -->
+<section id="gem-shader">
+  <h2><span class="n">10</span> The gem shader, layer by layer</h2>
+  <div class="rule"></div>
+  <p>This is where most of the “it looks good” lives. <code>gem.gdshader</code> is a
+  <code>canvas_item</code> fragment shader applied to each gem’s <code>Sprite2D</code>. It receives the
+  gem’s tint and three control uniforms, and composites the jewel from a stack of cheap analytic layers.
+  Every gem is the same shader; only the uniforms differ.</p>
+  <div class="filetag">shaders/gem.gdshader — uniforms</div>
+<pre><span class="k">uniform</span> <span class="t">vec4</span>  base_color : <span class="k">source_color</span>;   <span class="c">// the gem's hue (per instance)</span>
+<span class="k">uniform</span> <span class="t">float</span> selected = <span class="n">0.0</span>;             <span class="c">// 0..1 selection pulse (animated from GDScript)</span>
+<span class="k">uniform</span> <span class="t">int</span>   special  = <span class="n">0</span>;               <span class="c">// 0 normal · 1 stripe · 2 color-bomb</span>
+<span class="k">uniform</span> <span class="t">float</span> shimmer  = <span class="n">1.0</span>;             <span class="c">// global lustre intensity</span></pre>
+
+  <h3>The shape: a rounded-box signed distance field</h3>
+  <p>Instead of sampling a sprite, the gem’s shape is defined mathematically by a <strong>signed distance
+  field</strong> (SDF). For any pixel, <code>rounded_box()</code> returns the signed distance to the gem’s
+  edge — negative inside, zero on the border, positive outside. That single number drives the silhouette,
+  the anti-aliasing, the beveled edge, the rim light, <em>and</em> the selection ring.</p>
+<pre><span class="k">float</span> <span class="f">rounded_box</span>(<span class="t">vec2</span> p, <span class="t">vec2</span> b, <span class="t">float</span> r){
+    <span class="t">vec2</span> q = <span class="f">abs</span>(p) - b + r;
+    <span class="k">return</span> <span class="f">length</span>(<span class="f">max</span>(q, <span class="t">vec2</span>(<span class="n">0.0</span>))) + <span class="f">min</span>(<span class="f">max</span>(q.x, q.y), <span class="n">0.0</span>) - r;
+}
+
+<span class="k">void</span> <span class="f">fragment</span>(){
+    <span class="t">vec2</span> uv = UV * <span class="n">2.0</span> - <span class="n">1.0</span>;              <span class="c">// remap to -1..1, centered</span>
+    <span class="t">float</span> d  = <span class="f">rounded_box</span>(uv, <span class="t">vec2</span>(<span class="n">0.80</span>), <span class="n">0.26</span>);
+    <span class="t">float</span> aa = <span class="f">fwidth</span>(d) * <span class="n">1.5</span>;            <span class="c">// 1px-consistent edge softness</span>
+    <span class="t">float</span> mask = <span class="n">1.0</span> - <span class="f">smoothstep</span>(<span class="n">0.0</span>, aa, d);  <span class="c">// 1 inside → 0 outside</span></pre>
+  <div class="note"><b>Why <code>fwidth(d)</code> for anti-aliasing?</b> <code>fwidth</code> measures how fast
+  <code>d</code> changes between neighboring pixels, giving a screen-space-consistent edge that’s exactly
+  ~1px soft no matter how big the gem is drawn or how it’s scaled mid-bounce. No jaggies, ever — and it
+  costs one instruction.</p></div>
+
+  <h3>The composite stack</h3>
+  <p>On top of the silhouette, the body color is built up from these layers, in order. Each is a few
+  cheap math ops; together they read as a faceted, lit jewel:</p>
+  <div class="stack">
+    <div class="layer"><div class="ix">1</div><div class="nm">Top-lit gradient</div><div class="ds">A vertical light→dark ramp (brighter at the top) gives an overhead-light read.</div></div>
+    <div class="layer"><div class="ix">2</div><div class="nm">Center pop</div><div class="ds">A soft radial brighten in the middle adds volume, like light passing through the stone.</div></div>
+    <div class="layer"><div class="ix">3</div><div class="nm">Beveled edge</div><div class="ds">Darken a band right at the SDF border (<code>abs(d+0.04)</code>) → a cut, faceted rim.</div></div>
+    <div class="layer"><div class="ix">4</div><div class="nm">Lustre sheen</div><div class="ds">A wide, low-contrast diagonal band that drifts with <code>TIME</code> — the moving shine.</div></div>
+    <div class="layer"><div class="ix">5</div><div class="nm">Gloss specular</div><div class="ds">A small crisp white hotspot upper-left + a soft halo around it: the “wet” highlight.</div></div>
+    <div class="layer"><div class="ix">6</div><div class="nm">Rim bounce light</div><div class="ds">A faint colored glow along the bottom edge, as if light bounces up off the board.</div></div>
+    <div class="layer"><div class="ix">7</div><div class="nm">Special marker</div><div class="ds">Stripe bar or pulsing bomb core, drawn only when <code>special &gt; 0</code>.</div></div>
+    <div class="layer"><div class="ix">8</div><div class="nm">Selection ring + bloom</div><div class="ds">A bright rim and an outward halo, driven by the animated <code>selected</code> uniform.</div></div>
+  </div>
+<pre>    <span class="t">float</span> rad = <span class="f">length</span>(uv);
+    <span class="t">vec3</span> col = base_color.rgb;
+    <span class="c">// 1 · top-lit vertical gradient</span>
+    <span class="t">vec3</span> body = <span class="f">mix</span>(<span class="f">mix</span>(col, <span class="t">vec3</span>(<span class="n">1.0</span>), <span class="n">0.42</span>), col*<span class="n">0.38</span>, <span class="f">smoothstep</span>(-<span class="n">0.9</span>, <span class="n">1.0</span>, uv.y));
+    <span class="c">// 2 · center pop</span>
+    body = <span class="f">mix</span>(body, <span class="f">mix</span>(col, <span class="t">vec3</span>(<span class="n">1.0</span>), <span class="n">0.55</span>), <span class="f">smoothstep</span>(<span class="n">0.7</span>, <span class="n">0.0</span>, rad)*<span class="n">0.35</span>);
+    <span class="c">// 3 · beveled darker edge</span>
+    body *= <span class="n">1.0</span> - <span class="f">smoothstep</span>(<span class="n">0.18</span>, <span class="n">0.0</span>, <span class="f">abs</span>(d + <span class="n">0.04</span>)) * <span class="n">0.22</span>;
+    <span class="c">// 4 · broad soft lustre, drifting with TIME</span>
+    <span class="t">float</span> band = <span class="f">sin</span>((uv.x - uv.y) * <span class="n">1.25</span> - TIME * <span class="n">0.7</span>);
+    body += <span class="f">smoothstep</span>(<span class="n">0.25</span>, <span class="n">1.0</span>, band) * <span class="n">0.08</span> * shimmer;
+    <span class="c">// 5 · crisp gloss dot + soft surround</span>
+    <span class="t">float</span> spec = <span class="f">smoothstep</span>(<span class="n">0.18</span>, <span class="n">0.0</span>, <span class="f">length</span>((uv - <span class="t">vec2</span>(-<span class="n">0.34</span>,-<span class="n">0.40</span>)) * <span class="t">vec2</span>(<span class="n">1.0</span>,<span class="n">1.25</span>)));
+    body += spec * <span class="n">0.95</span>;
+    body += <span class="f">smoothstep</span>(<span class="n">0.6</span>, <span class="n">0.0</span>, <span class="f">length</span>(uv - <span class="t">vec2</span>(-<span class="n">0.26</span>,-<span class="n">0.32</span>))) * <span class="n">0.12</span>;
+    <span class="c">// 6 · bottom rim bounce light</span>
+    <span class="t">float</span> rim = <span class="f">smoothstep</span>(-<span class="n">0.1</span>, <span class="n">0.7</span>, uv.y) * <span class="f">smoothstep</span>(<span class="n">0.35</span>, <span class="n">0.05</span>, <span class="f">abs</span>(d + <span class="n">0.03</span>));
+    body += rim * <span class="f">mix</span>(col, <span class="t">vec3</span>(<span class="n">1.0</span>), <span class="n">0.35</span>) * <span class="n">0.55</span>;</pre>
+
+  <h3>Specials, drawn in the same pass</h3>
+<pre>    <span class="k">if</span> (special == <span class="n">1</span>)        <span class="c">// stripe → bright horizontal bar</span>
+        body = <span class="f">mix</span>(body, <span class="t">vec3</span>(<span class="n">1.0</span>), <span class="f">smoothstep</span>(<span class="n">0.15</span>, <span class="n">0.08</span>, <span class="f">abs</span>(uv.y)) * <span class="n">0.85</span>);
+    <span class="k">else if</span> (special == <span class="n">2</span>){  <span class="c">// color bomb → pulsing white core</span>
+        <span class="t">float</span> pulse = <span class="n">0.5</span> + <span class="n">0.5</span> * <span class="f">sin</span>(TIME * <span class="n">5.0</span>);
+        body = <span class="f">mix</span>(body, <span class="t">vec3</span>(<span class="n">1.0</span>), <span class="f">smoothstep</span>(<span class="n">0.5</span>, <span class="n">0.0</span>, rad) * (<span class="n">0.4</span> + <span class="n">0.4</span>*pulse));
+    }</pre>
+</section>
+
+<!-- ============================================================ LUSTRE -->
+<section id="lustre">
+  <h2><span class="n">10a</span> Getting the lustre right (an iteration story)</h2>
+  <div class="rule"></div>
+  <p>The shine did <strong>not</strong> look good on the first try, and the fix is instructive — it’s the
+  difference between a shader that says “amateur” and one that says “jewel.” The honest progression:</p>
+  <div class="ba">
+    <div class="col bad">
+      <h4>✗ First attempt — a hard sweep</h4>
+      <p class="small">The shine was a thin, high-contrast diagonal band moving fast across the gem:</p>
+<pre><span class="t">float</span> sweep = <span class="f">sin</span>((uv.x - uv.y)*<span class="n">2.5</span> - TIME*<span class="n">2.0</span>);
+body += <span class="f">smoothstep</span>(<span class="n">0.86</span>, <span class="n">1.0</span>, sweep) * <span class="n">0.25</span>;</pre>
+      <p class="small"><b>Why it looked bad:</b> a narrow <code>smoothstep(0.86,1.0)</code> window + high
+      amplitude = a sharp bright line scanning the surface. It read as a <em>glitchy scan-line</em>, not
+      light on a stone. Fast <code>TIME*2.0</code> made it twitchy.</p>
+    </div>
+    <div class="col good">
+      <h4>✓ The fix — a broad slow sheen + a static gloss</h4>
+      <p class="small">Split “shine” into its two real-world parts and tune each:</p>
+<pre><span class="c">// (a) wide, faint, slow drifting sheen</span>
+<span class="t">float</span> band = <span class="f">sin</span>((uv.x - uv.y)*<span class="n">1.25</span> - TIME*<span class="n">0.7</span>);
+body += <span class="f">smoothstep</span>(<span class="n">0.25</span>, <span class="n">1.0</span>, band) * <span class="n">0.08</span>;
+<span class="c">// (b) a crisp, STATIC specular hotspot</span>
+body += spec * <span class="n">0.95</span>;</pre>
+      <p class="small"><b>Why it works:</b> the wide <code>smoothstep(0.25,1.0)</code> window makes the sheen
+      a gentle gradient across the whole gem; low <code>0.08</code> amplitude keeps it subtle; slow
+      <code>0.7</code> drift makes it luxurious. The <em>sharpness</em> now comes from a separate
+      <strong>fixed</strong> gloss dot — real glossy objects have a still highlight that doesn’t race around.</p>
+    </div>
+  </div>
+
+  <div class="warn"><b>The over-correction, also worth telling.</b> The first re-tune went <em>too</em> soft —
+  the gems came out pastel and washed-out. The recovery was to push contrast back the other way:
+  darker bevel + edges (<code>col*0.38</code>), a stronger center pop, and a tighter brighter gloss
+  (<code>0.95</code>). <strong>The lesson: “juicy” lives between glitchy and washed-out, and you only find
+  it by overshooting both directions and meeting in the middle.</strong></p>
+
+  <h4>The principles that generalize</h4>
+  <ul>
+    <li><strong>Separate the moving sheen from the sharp highlight.</strong> One slow &amp; wide, one crisp &amp; still. Conflating them is what makes shine look cheap.</li>
+    <li><strong>Subtle motion beats fast motion.</strong> A barely-moving sheen reads as quality; a fast one reads as a bug.</li>
+    <li><strong>Contrast is the dial for “premium.”</strong> Too little → pastel; too much → garish. Tune it last, against real screenshots.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ SELECTION -->
+<section id="selection">
+  <h2><span class="n">10b</span> The selection glow — shader + tween together</h2>
+  <div class="rule"></div>
+  <p>The first selection effect was a single scale-up that then sat still — it read as <em>weak</em>. The
+  fix is a collaboration between the shader (which can draw glow <em>outside</em> the gem) and GDScript
+  (which animates it forever while selected).</p>
+
+  <h3>Shader side: a halo that lives beyond the body</h3>
+  <p>Normally a fragment outside the gem is discarded. But a glow needs to bloom <em>past</em> the
+  silhouette — so the alpha is computed jointly: it’s the max of the body mask and an outward
+  <code>bloom</code> term that only exists when <code>selected &gt; 0</code>. Where the body is absent, the
+  pixel shows a brightened tint of the gem color instead of being thrown away.</p>
+<pre>    <span class="c">// outward bloom drives EXTRA alpha beyond the body silhouette</span>
+    <span class="t">float</span> bloom = selected * (<span class="n">1.0</span> - <span class="f">smoothstep</span>(<span class="n">0.0</span>, <span class="n">0.34</span>, <span class="f">max</span>(d, <span class="n">0.0</span>)));
+    <span class="t">float</span> alpha = <span class="f">max</span>(mask, bloom * <span class="n">0.7</span>);
+    <span class="k">if</span> (alpha &lt;= <span class="n">0.004</span>) <span class="f">discard</span>;
+    …
+    <span class="c">// a bright ring exactly on the body edge + an inner brighten</span>
+    <span class="t">float</span> sel_ring = selected * <span class="f">smoothstep</span>(<span class="n">0.09</span>, <span class="n">0.0</span>, <span class="f">abs</span>(d + <span class="n">0.02</span>));
+    body += <span class="f">mix</span>(col, <span class="t">vec3</span>(<span class="n">1.0</span>), <span class="n">0.7</span>) * sel_ring * <span class="n">0.9</span>;
+    body += col * selected * <span class="n">0.22</span>;
+    <span class="c">// compose: bloom color shows where the body mask is absent</span>
+    <span class="t">vec3</span> final = <span class="f">mix</span>(<span class="f">mix</span>(base_color.rgb, <span class="t">vec3</span>(<span class="n">1.0</span>), <span class="n">0.65</span>), body, mask);</pre>
+
+  <h3>Script side: a looping “breathing” pulse</h3>
+  <p>A selected gem should feel alive, so GDScript runs an <strong>infinite looping tween</strong> that
+  oscillates the sprite’s scale <em>and</em> the shader’s <code>selected</code> value together — they
+  breathe in sync. Deselecting kills the loop and springs the gem back to rest. Sine easing makes the
+  breathing smooth; the two halves give a slow in-out rhythm.</p>
+  <div class="filetag">scripts/Gem.gd</div>
+<pre><span class="k">func</span> <span class="f">set_selected</span>(on):
+    <span class="k">if</span> _sel_tween <span class="k">and</span> _sel_tween.<span class="f">is_valid</span>(): _sel_tween.<span class="f">kill</span>()
+    <span class="k">if</span> on:
+        _sprite.scale = base * <span class="n">1.1</span>
+        _sel_tween = <span class="f">create_tween</span>().<span class="f">set_loops</span>()                    <span class="c"># forever</span>
+        _sel_tween.<span class="f">tween_property</span>(_sprite, <span class="s">"scale"</span>, base*<span class="n">1.2</span>, <span class="n">0.5</span>).<span class="f">set_trans</span>(SINE)
+        _sel_tween.<span class="f">parallel</span>().<span class="f">tween_method</span>(_set_sel, <span class="n">1.0</span>, <span class="n">0.55</span>, <span class="n">0.5</span>)  <span class="c"># glow down</span>
+        _sel_tween.<span class="f">tween_property</span>(_sprite, <span class="s">"scale"</span>, base*<span class="n">1.06</span>, <span class="n">0.5</span>).<span class="f">set_trans</span>(SINE)
+        _sel_tween.<span class="f">parallel</span>().<span class="f">tween_method</span>(_set_sel, <span class="n">0.55</span>, <span class="n">1.0</span>, <span class="n">0.5</span>)  <span class="c"># glow up</span>
+    <span class="k">else</span>:
+        <span class="f">_set_sel</span>(<span class="n">0.0</span>)
+        <span class="f">create_tween</span>().<span class="f">tween_property</span>(_sprite, <span class="s">"scale"</span>, base, <span class="n">0.18</span>).<span class="f">set_trans</span>(BACK)</pre>
+  <div class="key"><b>The takeaway.</b> “Weak” selection feedback is almost always feedback that
+  <em>stops</em>. A one-shot tween ends and the eye loses it. A small <strong>continuous</strong> motion —
+  even a 6% scale breath — keeps the eye locked on the choice you’re about to commit.</div>
+</section>
+
+<!-- ============================================================ TWEENS -->
+<section id="tweens">
+  <h2><span class="n">11</span> Tween-driven motion</h2>
+  <div class="rule"></div>
+  <p>Every gem movement in the game funnels through one method, <code>Gem.move_to()</code>. The caller picks
+  the duration, an optional start delay (for staggering), and an easing curve — and that single choice of
+  <em>curve</em> is what gives each kind of motion its character.</p>
+  <div class="filetag">scripts/Gem.gd</div>
+<pre><span class="k">func</span> <span class="f">move_to</span>(target, duration, delay = <span class="n">0.0</span>, trans = <span class="t">Tween</span>.TRANS_BACK):
+    <span class="k">var</span> t = <span class="f">create_tween</span>()
+    <span class="k">if</span> delay &gt; <span class="n">0.0</span>: t.<span class="f">tween_interval</span>(delay)
+    t.<span class="f">tween_property</span>(<span class="k">self</span>, <span class="s">"position"</span>, target, duration).<span class="f">set_trans</span>(trans).<span class="f">set_ease</span>(EASE_OUT)</pre>
+  <table>
+    <tr><th>Motion</th><th>Easing</th><th>Why this curve</th></tr>
+    <tr><td>Swap into place</td><td><code>BACK</code></td><td>A tiny overshoot makes the swap feel snappy and physical.</td></tr>
+    <tr><td>Invalid swap-back</td><td><code>BACK</code></td><td>Same curve, reversed direction — the “bounce back” that means “no.”</td></tr>
+    <tr><td>Gravity fall</td><td><code>BOUNCE</code></td><td>Gems hit their slot and bounce — the core of the physical feel.</td></tr>
+    <tr><td>Refill from top</td><td><code>BOUNCE</code></td><td>New gems pour and settle the same way the survivors do.</td></tr>
+    <tr><td>Startup / shuffle entrance</td><td><code>BACK</code></td><td>Staggered overshoot makes the board “assemble” instead of appear.</td></tr>
+    <tr><td>Select breathe</td><td><code>SINE</code></td><td>Smooth, endless, never jarring.</td></tr>
+    <tr><td>Special forge / pop</td><td><code>ELASTIC</code> / <code>BACK</code></td><td>Springy overshoot for a celebratory “ping.”</td></tr>
+  </table>
+  <h3>Staggering = life</h3>
+  <p>Notice the <code>delay</code> argument threaded through the fills: <code>(c + r) * 0.03</code> at
+  startup, <code>spawn * 0.02</code> on refill. Without it, 56 gems would arrive on the exact same frame
+  — a wall. With it, they arrive in a diagonal wave. The same trick (tiny per-element delays) is what makes
+  the entrance, the refill, and the reshuffle all feel choreographed rather than mechanical.</p>
+</section>
+
+<!-- ============================================================ PARTICLES -->
+<section id="particles">
+  <h2><span class="n">12</span> Particle bursts</h2>
+  <div class="rule"></div>
+  <p>Every cleared gem fires a one-shot <code>GPUParticles2D</code> burst in <em>its own color</em>, so a
+  match dissolves into a spray of matching sparks. The emitter is configured once in
+  <code>Gem.setup()</code> and triggered in <code>pop()</code>.</p>
+  <div class="cols">
+    <div>
+      <div class="filetag">scripts/Gem.gd — emitter setup</div>
+<pre>_burst.amount = <span class="n">18</span>
+_burst.one_shot = <span class="k">true</span>
+_burst.explosiveness = <span class="n">1.0</span>     <span class="c"># all at once, not a stream</span>
+_burst.lifetime = <span class="n">0.6</span>
+pm.spread = <span class="n">180.0</span>             <span class="c"># full circle</span>
+pm.gravity = <span class="t">Vector3</span>(<span class="n">0</span>, <span class="n">320</span>, <span class="n">0</span>) <span class="c"># sparks fall realistically</span>
+pm.initial_velocity = <span class="n">120</span>..<span class="n">320</span>
+pm.angular_velocity = ±<span class="n">400</span>      <span class="c"># tumbling</span>
+pm.scale_curve = <span class="n">1</span> → <span class="n">0</span>          <span class="c"># shrink to nothing</span>
+pm.color = COLORS[type]          <span class="c"># tinted to the gem</span></pre>
+    </div>
+    <div>
+      <div class="filetag">scripts/Gem.gd — the pop</div>
+<pre><span class="k">func</span> <span class="f">pop</span>():
+    _burst.<span class="f">restart</span>(); _burst.emitting = <span class="k">true</span>
+    <span class="k">var</span> t = <span class="f">create_tween</span>().<span class="f">set_parallel</span>(<span class="k">true</span>)
+    <span class="c"># flash bigger, THEN shrink to zero while spinning</span>
+    t.<span class="f">tween_property</span>(_sprite,<span class="s">"scale"</span>, base*<span class="n">1.4</span>, <span class="n">0.10</span>)
+    t.<span class="f">chain</span>().<span class="f">tween_property</span>(_sprite,<span class="s">"scale"</span>, ZERO, <span class="n">0.18</span>).<span class="f">set_trans</span>(BACK)
+    t.<span class="f">parallel</span>().<span class="f">tween_property</span>(_sprite,<span class="s">"rotation"</span>, <span class="f">randf_range</span>(-PI,PI), <span class="n">0.28</span>)
+    <span class="k">await</span> get_tree().<span class="f">create_timer</span>(<span class="n">0.65</span>).timeout   <span class="c"># let sparks live</span>
+    <span class="f">queue_free</span>()</pre>
+    </div>
+  </div>
+  <p>The clear has three beats happening at once: the gem <strong>flashes 40% bigger</strong>, then
+  <strong>shrinks to nothing while spinning</strong> a random amount, while the <strong>sparks fly and
+  fall</strong>. The node only frees itself after 0.65&nbsp;s so the particles aren’t cut off mid-air.
+  <code>local_coords = false</code> means sparks keep flying in world space even as the gem node is
+  scaled away.</p>
+</section>
+
+<!-- ============================================================ SHAKE -->
+<section id="shake">
+  <h2><span class="n">13</span> Screen shake</h2>
+  <div class="rule"></div>
+  <p>Impact is sold with a short positional shake of the whole <code>Board</code> node. It’s a chain of six
+  tiny random offsets followed by a settle back to zero. Crucially it fires <strong>only from combo 2+</strong>
+  and its amplitude scales with the combo, so the screen punches harder the deeper the chain — and a plain
+  single match stays calm.</p>
+<pre><span class="k">func</span> <span class="f">_shake</span>(strength):
+    <span class="k">var</span> t = <span class="f">create_tween</span>()
+    <span class="k">for</span> i <span class="k">in</span> <span class="n">6</span>:
+        t.<span class="f">tween_property</span>(<span class="k">self</span>, <span class="s">"position"</span>,
+            <span class="t">Vector2</span>(<span class="f">randf_range</span>(-strength,strength), <span class="f">randf_range</span>(-strength,strength)), <span class="n">0.03</span>)
+    t.<span class="f">tween_property</span>(<span class="k">self</span>, <span class="s">"position"</span>, <span class="t">Vector2</span>.ZERO, <span class="n">0.05</span>)
+
+<span class="c"># callers:</span>
+<span class="k">if</span> combo &gt;= <span class="n">2</span>: <span class="f">_shake</span>(<span class="f">min</span>(<span class="n">2.0</span> + combo, <span class="n">8.0</span>))   <span class="c"># grows with the chain, capped</span>
+<span class="f">_shake</span>(<span class="n">5.0</span>)                                  <span class="c"># a firm jolt whenever a blast triggers</span></pre>
+  <p class="small">Because the HUD is on a separate <code>CanvasLayer</code> (see §1), only the playfield
+  rattles — the text never blurs. The cap at 8&nbsp;px keeps even a huge chain from becoming nauseating.</p>
+</section>
+
+<!-- ============================================================ POPUPS -->
+<section id="popups">
+  <h2><span class="n">14</span> Floating score pop-ups</h2>
+  <div class="rule"></div>
+  <p>Each clear spawns a temporary <code>Label</code> at the <em>average position of the cleared gems</em>,
+  so the number appears right where the action was. It drifts up, fades out, and frees itself. From combo 2
+  it shows the multiplier and grows its font, so a big chain literally throws a bigger number.</p>
+<pre><span class="k">var</span> avg = (sum of cleared cell positions) / count   <span class="c"># appear at the match</span>
+lbl.text = combo &lt; <span class="n">2</span> ? <span class="s">"+%d"</span> : <span class="s">"+%d  x%d"</span>
+lbl.<span class="f">add_theme_font_size_override</span>(<span class="s">"font_size"</span>, <span class="n">30</span> + combo*<span class="n">6</span>)  <span class="c"># bigger per combo</span>
+<span class="k">var</span> t = <span class="f">create_tween</span>().<span class="f">set_parallel</span>(<span class="k">true</span>)
+t.<span class="f">tween_property</span>(lbl, <span class="s">"position"</span>, up_by_70px, <span class="n">0.7</span>)   <span class="c"># float up</span>
+t.<span class="f">tween_property</span>(lbl, <span class="s">"modulate:a"</span>, <span class="n">0.0</span>, <span class="n">0.7</span>).<span class="f">set_delay</span>(<span class="n">0.25</span>)  <span class="c"># lingers, then fades</span>
+t.<span class="f">chain</span>().<span class="f">tween_callback</span>(lbl.queue_free)            <span class="c"># self-cleanup</span></pre>
+  <p class="small">A gold fill with a dark outline keeps the number legible over any gem color underneath.</p>
+</section>
+
+<!-- ============================================================ HUD -->
+<section id="hud">
+  <h2><span class="n">15</span> HUD pulse</h2>
+  <div class="rule"></div>
+  <p>The stat labels don’t just change text — they <em>react</em>. Every time the score or moves update,
+  the label springs to 120% and elastically settles back, so your eye is drawn to what changed. The combo
+  banner fades in with the same pop on a chain and fades out a beat later.</p>
+<pre><span class="k">func</span> <span class="f">_pulse</span>(node, scale = <span class="n">1.2</span>):
+    node.pivot_offset = node.size * <span class="n">0.5</span>            <span class="c"># scale from center</span>
+    <span class="k">var</span> t = <span class="f">create_tween</span>()
+    t.<span class="f">tween_property</span>(node, <span class="s">"scale"</span>, <span class="t">Vector2</span>.ONE*scale, <span class="n">0.08</span>).<span class="f">set_trans</span>(BACK)
+    t.<span class="f">tween_property</span>(node, <span class="s">"scale"</span>, <span class="t">Vector2</span>.ONE, <span class="n">0.14</span>).<span class="f">set_trans</span>(ELASTIC)</pre>
+</section>
+
+<!-- ============================================================ BACKGROUND -->
+<section id="background">
+  <h2><span class="n">16</span> The living background</h2>
+  <div class="rule"></div>
+  <p>A full-screen <code>ColorRect</code> on the bottom-most <code>CanvasLayer</code> runs
+  <code>background.gdshader</code>: a vertical gradient whose split line gently waves, three soft glow blobs
+  that drift on lazy sine/cosine orbits, and a vignette that focuses the eye on the board. It’s extremely
+  cheap and ensures the screen is never static even when the player is just thinking.</p>
+  <div class="filetag">shaders/background.gdshader</div>
+<pre><span class="k">void</span> <span class="f">fragment</span>(){
+    <span class="t">vec2</span> uv = UV;
+    <span class="c">// gradient line waves slowly across x and time</span>
+    <span class="t">float</span> g = uv.y + <span class="n">0.12</span> * <span class="f">sin</span>(uv.x*<span class="n">3.0</span> + TIME*<span class="n">0.25</span>);
+    <span class="t">vec3</span> col = <span class="f">mix</span>(color_a.rgb, color_b.rgb, <span class="f">clamp</span>(g, <span class="n">0.0</span>, <span class="n">1.0</span>));
+    <span class="c">// three drifting glow blobs</span>
+    <span class="k">for</span> (<span class="t">int</span> i = <span class="n">0</span>; i &lt; <span class="n">3</span>; i++){
+        <span class="t">vec2</span> c = <span class="t">vec2</span>(<span class="n">0.5</span> + <span class="n">0.42</span>*<span class="f">sin</span>(TIME*<span class="n">0.18</span> + i*<span class="n">2.1</span>),
+                      <span class="n">0.5</span> + <span class="n">0.42</span>*<span class="f">cos</span>(TIME*<span class="n">0.15</span> + i*<span class="n">1.7</span>));
+        col += (<span class="n">0.05</span> / (<span class="f">distance</span>(uv,c)*<span class="n">7.0</span> + <span class="n">0.35</span>)) * glow.rgb;
+    }
+    col *= <span class="f">smoothstep</span>(<span class="n">1.25</span>, <span class="n">0.25</span>, <span class="f">distance</span>(uv, <span class="t">vec2</span>(<span class="n">0.5</span>)));  <span class="c">// vignette</span>
+    COLOR = <span class="t">vec4</span>(col, <span class="n">1.0</span>);
+}</pre>
+</section>
+
+<!-- ============================================================ TUNING -->
+<section id="tuning">
+  <h2><span class="n">·</span> Tuning reference — the magic numbers</h2>
+  <div class="rule"></div>
+  <p>Game-feel is in the constants. These are the dials that were tuned against real screenshots; they’re
+  collected here so the whole feel can be re-balanced in one place.</p>
+  <table>
+    <tr><th>Where</th><th>Value</th><th>Effect</th></tr>
+    <tr><td>Lustre sheen amplitude</td><td><code>0.08</code></td><td>How visible the moving shine is. Higher → glitchy.</td></tr>
+    <tr><td>Lustre drift speed</td><td><code>TIME * 0.7</code></td><td>How fast the sheen travels. Higher → twitchy.</td></tr>
+    <tr><td>Gloss dot intensity / size</td><td><code>0.95 / 0.18</code></td><td>The “wet” highlight. The crispness of the gem.</td></tr>
+    <tr><td>Selection breathe scale</td><td><code>1.06 – 1.20</code></td><td>Amplitude of the pulse. Even small reads as alive.</td></tr>
+    <tr><td>Selection bloom reach</td><td><code>0.34</code></td><td>How far the halo extends past the gem.</td></tr>
+    <tr><td>Swap duration</td><td><code>0.18 s</code></td><td>Snappiness of a move.</td></tr>
+    <tr><td>Fall base + per-cell</td><td><code>0.16 + 0.035/cell</code></td><td>Gravity weight; bounce spread.</td></tr>
+    <tr><td>Refill stagger</td><td><code>0.02 s/gem</code></td><td>The diagonal “pour” wave.</td></tr>
+    <tr><td>Shake amplitude</td><td><code>min(2+combo, 8)</code></td><td>Impact that grows with the chain.</td></tr>
+    <tr><td>Score formula</td><td><code>n × 30 × combo</code></td><td>Cascades are where the points are.</td></tr>
+  </table>
+</section>
+
+<!-- ============================================================ PERFORMANCE -->
+<section id="performance">
+  <h2><span class="n">·</span> Performance &amp; mobile</h2>
+  <div class="rule"></div>
+  <ul>
+    <li><strong>Mobile renderer / Metal.</strong> The project uses Godot’s <code>mobile</code> rendering method; verified running on Apple Silicon (Metal 4.0).</li>
+    <li><strong>Cheap shaders.</strong> Both shaders are a handful of <code>smoothstep</code>/<code>sin</code>/<code>length</code> ops per pixel — no loops over textures, no branches in the hot path beyond the special marker. 56 small quads is nothing for a GPU.</li>
+    <li><strong>One material per gem, two shared textures.</strong> Each gem owns a <code>ShaderMaterial</code> (so its <code>selected</code>/<code>special</code> uniforms are independent), but the white quad and the soft particle dot are built once and shared by all.</li>
+    <li><strong>Self-cleaning nodes.</strong> Popped gems and score pop-ups <code>queue_free()</code> themselves after their animation; nothing leaks across a long session.</li>
+    <li><strong>Resolution-independent.</strong> <code>canvas_items</code> stretch with an <code>expand</code> aspect means it scales cleanly to any phone, and the SDF gems stay crisp at any size.</li>
+    <li><strong>Touch-first input</strong> with <em>emulate_touch_from_mouse</em>, so one code path serves both finger and mouse.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ FILE MAP -->
+<section id="filemap">
+  <h2><span class="n">·</span> File map — where to look</h2>
+  <div class="rule"></div>
+  <table>
+    <tr><th>File</th><th>Lines</th><th>Responsibility</th></tr>
+    <tr><td><code>scenes/Main.tscn</code></td><td>~5</td><td>The one real scene: a node with <code>Game.gd</code>.</td></tr>
+    <tr><td><code>scripts/Game.gd</code></td><td>~150</td><td>Root: background, HUD, board wiring, HUD pulse.</td></tr>
+    <tr><td><code>scripts/Board.gd</code></td><td>~520</td><td>Grid, input, matching, cascades, gravity, specials, shake, pop-ups.</td></tr>
+    <tr><td><code>scripts/Gem.gd</code></td><td>~165</td><td>One piece: shader visual, particles, select/swap/fall/pop animation.</td></tr>
+    <tr><td><code>shaders/gem.gdshader</code></td><td>~68</td><td>The procedural jewel + selection glow + special markers.</td></tr>
+    <tr><td><code>shaders/background.gdshader</code></td><td>~24</td><td>The animated gradient backdrop.</td></tr>
+    <tr><td><code>project.godot</code></td><td>—</td><td>Portrait, mobile renderer, touch emulation, 720×1280.</td></tr>
+  </table>
+  <p class="small">Run it: <code>godot --path . scenes/Main.tscn</code> &nbsp;·&nbsp; or open <code>project.godot</code> in the editor.</p>
+</section>
+
+<!-- ============================================================ VERIFY -->
+<section id="verify">
+  <h2><span class="n">·</span> How it was verified</h2>
+  <div class="rule"></div>
+  <p>Because the game is animation-heavy, it was checked by rendering real frames, not by reading code. A
+  temporary harness scene added a sibling node that, after a delay, drove the board’s own logic to play a
+  sequence of legal swaps — finding them via the board’s <code>_swap_makes_match()</code> and calling
+  <code>_try_swap()</code> — while saving <code>get_viewport().get_texture().get_image()</code> to PNGs
+  every beat, then quitting. The captured frames confirmed fills with no false matches, swaps, cascades,
+  the “+90 ×3” combo pop-ups, particle bursts, and the selection halo. The harness was deleted before
+  shipping.</p>
+  <div class="note"><b>Two Godot gotchas this surfaced</b> (both can silently show wrong state):
+  <ul class="small" style="margin:8px 0 0">
+    <li>A child node’s <code>_ready()</code> runs <em>before</em> its parent’s — so a probe must fetch the board <em>after</em> its first <code>await</code>, not at the top of <code>_ready()</code>.</li>
+    <li><code>add_child()</code> runs <code>_ready()</code> immediately, so signals emitted there are lost unless you connect first (the MOVES-shows-0 bug from §1).</li>
+  </ul></div>
+</section>
+
+<footer>
+  <p><strong>Gem Cascade</strong> · Godot 4.6 · a Match-3 portfolio piece focused on animated game pieces
+  and in-game visual effects. Every visual in this game is generated in code and shaders — no sprite assets.</p>
+  <p class="toplink"><a href="#overview">↑ Back to top</a></p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>
