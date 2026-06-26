@@ -1,5 +1,45 @@
 # Releases — Gem Cascade
 
+## 2026-06-26 — "Mega juice" spectacle pass (v2): voice announcer, real assets, bloom
+
+- **What deployed:** a re-export of the Web build to
+  **https://gemcascade.levelbrook.com**, re-skinned for maximum *visual + audible*
+  spectacle — the "speak the producer's language" pass (a match-3 buyer judges a
+  35-second clip on jaw-drop, not engineering elegance).
+- **Changed:**
+  - **Excited voice announcer** — real recorded callouts (free Hume Octave neural
+    TTS, bundled as 16 `.ogg`): "Let's go!", "Nice!", "Amazing!", "Unstoppable!",
+    "Gem Cascade!", "Ka-boom!"… An escalating tier system fires a bigger shout +
+    bigger on-screen text as combos climb (`scripts/Announcer.gd`).
+  - **Big punchy combo text** in a chunky arcade display font (Luckiest Guy /
+    Bungee, OFL) — scale-punch in, hold, fly up + fade; colour escalates by tier.
+  - **Bloom / glow** — every gem now carries an additive coloured glow halo (reads
+    as bloom on the web compatibility renderer, no HDR post-process needed); pops
+    flare the halo huge and white.
+  - **Mega particle juice** — textured spark-stars + tumbling gem shards + soft
+    additive puffs on every clear; expanding **shockwave rings** scaled to clear
+    size and combo depth.
+  - **Hit-stop** (brief world-freeze) on meaty clears, **trauma-based decaying
+    screen shake**, full-screen colour **flash**, squash-and-stretch on gem landing.
+  - **Synthesized music** — an upbeat seamless looping soundtrack (bass + arpeggio
+    + pad + kick/hat groove) built in GDScript at boot (`scripts/Music.gd`); ducks
+    when a blast goes off. Mute toggle now silences sfx + voice + music together.
+  - Richer background shader (drifting nebula + twinkling star field + vignette).
+  - New CC0/own assets under `assets/` (5 VFX textures, 3 OFL fonts, 16 voice .ogg).
+  - Recorded a **32 s self-playing demo with sound** (announcer + music + sfx) via a
+    throwaway MovieWriter harness; artifacts in `~/Desktop/gem-cascade-prep/video/`
+    (`gem-cascade-v2-demo.mp4`, a silent `gem-cascade-v2-loop.mp4`, a poster).
+- **How:** `godot --headless --export-release "Web" build/web/index.html` then
+  `rsync build/web/ → root@5.78.108.109:/root/gemcascade/web/` (Caddy serves the
+  live volume) + `docker restart gemcascade-web`. Video: `godot --write-movie
+  out.avi --fixed-fps 60 res://_Movie.tscn` → ffmpeg H.264/AAC, AVI deleted after.
+- **Verified:** served `index.pck` byte-size matches the local build exactly
+  (765,260 B); wasm 200 + `content-encoding: gzip` + `content-type:
+  application/wasm`; loaded the live site in real Chromium (1223) — **0 page
+  errors, 0 failed requests**, canvas renders. The recorded MP4 has a confirmed
+  AAC stream (announcer/music actually ran), 32.1 s. Self-playing screenshot pass
+  captured the "EXCELLENT!"/blast spectacle on the real display before deploy.
+
 ## 2026-06-23 — Procedural sound effects + demo video
 
 - **What deployed:** a re-export of the Web build to

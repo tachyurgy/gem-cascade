@@ -14,6 +14,8 @@ config/icon="res://icon.svg"
 [autoload]
 
 Audio="*res://scripts/Audio.gd"
+Announcer="*res://scripts/Announcer.gd"
+Music="*res://scripts/Music.gd"
 
 [display]
 

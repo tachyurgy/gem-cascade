@@ -1,7 +1,8 @@
 class_name Board
 extends Node2D
 ## The play grid: input, swap validation, match detection, cascading gravity,
-## refills, special "blast" pieces, and all the timing that makes it feel juicy.
+## refills, special "blast" pieces, and all the timing/juice that makes it feel
+## alive — shockwave rings, decaying screen shake, hit-stop, and announcer hooks.
 
 signal score_changed(total: int)
 signal combo_changed(combo: int)
@@ -16,6 +17,7 @@ const NUM_TYPES := 6
 const START_MOVES := 30
 
 var _gem_shader: Shader = preload("res://shaders/gem.gdshader")
+var _ring_tex: Texture2D
 
 var _grid: Array = []          # _grid[col][row] -> Gem or null
 var _origin: Vector2           # world position of cell (0,0) centre
@@ -23,6 +25,8 @@ var _selected: Gem = null
 var _busy := false
 var _score := 0
 var _moves := START_MOVES
+var _shake_trauma := 0.0
+var _base_pos := Vector2.ZERO
 
 # Pointer/swipe tracking.
 var _press_gem: Gem = null
@@ -33,6 +37,7 @@ var _swiped := false
 func _ready() -> void:
 	var board_w := COLS * CELL
 	_origin = Vector2((720.0 - board_w) * 0.5 + CELL * 0.5, 372.0)
+	_ring_tex = _opt_tex("res://assets/particles/ring.png")
 	_draw_frame()
 	_grid.resize(COLS)
 	for c in COLS:
@@ -41,6 +46,13 @@ func _ready() -> void:
 	_initial_fill()
 	emit_signal("score_changed", _score)
 	emit_signal("moves_changed", _moves)
+	# Kick the game off with an excited "Let's go!" once the board has rained in.
+	await get_tree().create_timer(0.7).timeout
+	Announcer.say("go", 1.0, 3.0)
+
+
+func _opt_tex(path: String) -> Texture2D:
+	return load(path) if ResourceLoader.exists(path) else null
 
 
 # ---------------------------------------------------------------- geometry ---
@@ -216,6 +228,7 @@ func _try_swap(a: Gem, b: Gem) -> void:
 	if matches.is_empty() and not has_special:
 		# Invalid: swap back with a little shake.
 		Audio.play("invalid")
+		_shake(3.0)
 		_swap_in_grid(a, b)
 		a.move_to(_cell_pos(a.col, a.row), 0.18)
 		b.move_to(_cell_pos(b.col, b.row), 0.18)
@@ -285,7 +298,6 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 		for run in runs:
 			for cell in run["cells"]:
 				matched[cell] = true
-		# Also pull in any specials that got dragged into a match.
 		if matched.is_empty():
 			break
 
@@ -293,6 +305,9 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 		emit_signal("combo_changed", combo)
 		# Each cascade step rings a semitone higher — the satisfying combo ladder.
 		Audio.play("match", pow(2.0, min(combo - 1, 12) / 12.0))
+		# The excited announcer + big combo text take over from combo 2 up.
+		if combo >= 2:
+			Announcer.hype(combo)
 
 		# Decide which cells become new special pieces (don't clear those).
 		var survivors := {}    # Vector2i -> kind
@@ -316,8 +331,17 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 		_score += gained
 		emit_signal("score_changed", _score)
 		_spawn_score_popup(matched, gained, combo)
+
+		# Spectacle scaled to the size + depth of the clear.
+		var centroid := _centroid(matched)
+		var big := matched.size() >= 5 or combo >= 3
+		_shockwave(centroid, _combo_color(combo),
+			1.2 + min(matched.size(), 12) * 0.18 + combo * 0.25)
 		if combo >= 2:
-			_shake(min(2.0 + combo, 8.0))
+			_shake(2.5 + combo * 1.6)
+		if big:
+			# A quick hit-stop sells the impact on the meaty clears.
+			_hitstop(0.06, 0.07)
 
 		# Pop everything in the clear set.
 		for cell in matched:
@@ -329,10 +353,14 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 		# Forge the new specials.
 		if not survivors.is_empty():
 			Audio.play("special")
-		for cell in survivors:
-			var g: Gem = _grid[cell.x][cell.y]
-			if g:
-				g.set_special(survivors[cell])
+			for cell in survivors:
+				var g: Gem = _grid[cell.x][cell.y]
+				if g:
+					g.set_special(survivors[cell])
+					if survivors[cell] == Gem.BOMB:
+						Announcer.say("wow", 1.0, 2.0)
+					else:
+						Announcer.say("sweet", 1.05, 1.0)
 
 		await get_tree().create_timer(0.18).timeout
 		await _collapse_and_refill()
@@ -386,8 +414,16 @@ func _expand_specials(matched: Dictionary) -> void:
 			if tg and tg.special != Gem.NONE and not done.has(t):
 				queue.append(t)
 	if not done.is_empty():
-		_shake(5.0)
+		# A blast is the loudest beat in the game: heavy shake, big shockwave,
+		# announcer "Ka-boom!", and the music ducks so it cuts through.
+		_shake(9.0)
+		_hitstop(0.05, 0.09)
 		Audio.play("blast")
+		Announcer.say("kaboom", 1.0, 3.0)
+		Announcer.flash(Color("#fff1c4"), 0.28)
+		Music.duck(9.0, 0.18)
+		for cell in done:
+			_shockwave(_cell_pos(cell.x, cell.y), Color("#ffe9a8"), 2.6)
 
 
 # ----------------------------------------------------- gravity & refill ---
@@ -442,7 +478,7 @@ func _has_possible_move() -> bool:
 func _swap_makes_match(c1: int, r1: int, c2: int, r2: int) -> bool:
 	var a: Gem = _grid[c1][r1]
 	var b: Gem = _grid[c2][r2]
-	if a == null or b == null:
+	if a == null or b == null or not is_instance_valid(a) or not is_instance_valid(b):
 		return false
 	_grid[c1][r1] = b
 	_grid[c2][r2] = a
@@ -500,22 +536,73 @@ func _reshuffle() -> void:
 
 
 # ------------------------------------------------------------------- juice ---
-func _shake(strength: float) -> void:
+## Trauma-based decaying shake — punchier and more organic than a fixed wiggle.
+## Calls accumulate trauma; _process bleeds it off and offsets the whole board.
+func _shake(amount: float) -> void:
+	_shake_trauma = min(_shake_trauma + amount, 16.0)
+
+
+func _process(delta: float) -> void:
+	if _shake_trauma > 0.01:
+		var s := _shake_trauma
+		position = _base_pos + Vector2(randf_range(-s, s), randf_range(-s, s))
+		_shake_trauma = max(0.0, _shake_trauma - delta * 42.0)
+	elif position != _base_pos:
+		position = _base_pos
+
+
+func _hitstop(scale: float, dur: float) -> void:
+	# Brief world-freeze for impact. Uses an ignore-time-scale timer so it always
+	# restores even though everything else is frozen.
+	Engine.time_scale = scale
+	await get_tree().create_timer(dur, true, false, true).timeout
+	Engine.time_scale = 1.0
+
+
+func _centroid(cells: Dictionary) -> Vector2:
+	if cells.is_empty():
+		return _cell_pos(COLS / 2, ROWS / 2)
+	var avg := Vector2.ZERO
+	for cell in cells:
+		avg += _cell_pos(cell.x, cell.y)
+	return avg / cells.size()
+
+
+func _combo_color(combo: int) -> Color:
+	var palette := [
+		Color("#ffe66d"), Color("#ffd23f"), Color("#ff9f43"),
+		Color("#ff6b9d"), Color("#54e1ff"), Color("#c08bff"),
+	]
+	return palette[clampi(combo - 1, 0, palette.size() - 1)]
+
+
+## An expanding bright ring at a clear — the classic match-3 shockwave.
+func _shockwave(world_pos: Vector2, color: Color, scale_to: float) -> void:
+	if _ring_tex == null:
+		return
+	var s := Sprite2D.new()
+	s.texture = _ring_tex
+	var cm := CanvasItemMaterial.new()
+	cm.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	s.material = cm
+	s.position = world_pos
+	s.modulate = Color(color.r, color.g, color.b, 0.9)
+	s.scale = Vector2.ONE * 0.12
+	s.z_index = 40
+	add_child(s)
 	var t := create_tween()
-	for i in 6:
-		t.tween_property(self, "position",
-			Vector2(randf_range(-strength, strength), randf_range(-strength, strength)),
-			0.03)
-	t.tween_property(self, "position", Vector2.ZERO, 0.05)
+	t.set_parallel(true)
+	t.tween_property(s, "scale", Vector2.ONE * scale_to, 0.45)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(s, "modulate:a", 0.0, 0.45)\
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.chain().tween_callback(s.queue_free)
 
 
 func _spawn_score_popup(cells: Dictionary, amount: int, combo: int) -> void:
 	if cells.is_empty():
 		return
-	var avg := Vector2.ZERO
-	for cell in cells:
-		avg += _cell_pos(cell.x, cell.y)
-	avg /= cells.size()
+	var avg := _centroid(cells)
 
 	var lbl := Label.new()
 	lbl.text = ("+%d" % amount) if combo < 2 else ("+%d  x%d" % [amount, combo])
