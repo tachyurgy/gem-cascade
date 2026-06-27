@@ -31,6 +31,8 @@ var _spark: GPUParticles2D     # bright textured stars
 var _shard: GPUParticles2D     # angular gem shards
 var _sel_tween: Tween
 var _glow_base: float = 0.42
+var _phase: float = 0.0        # per-gem random phase: desyncs idle bob + shader twinkle
+var _bob: float = 0.0          # accumulates time for the idle float
 
 # Shared, lazily-built / loaded textures.
 static var _white: Texture2D
@@ -96,6 +98,8 @@ func setup(p_type: int, gem_size: float, shader: Shader) -> void:
 	_mat = ShaderMaterial.new()
 	_mat.shader = shader
 	_mat.set_shader_parameter("base_color", COLORS[type])
+	_phase = randf() * TAU
+	_mat.set_shader_parameter("phase", _phase)
 	_sprite.material = _mat
 	add_child(_sprite)
 
@@ -136,6 +140,20 @@ func setup(p_type: int, gem_size: float, shader: Shader) -> void:
 	_shard.local_coords = false
 	_shard.process_material = _shard_pm()
 	add_child(_shard)
+
+
+## Idle life: a gentle vertical float (and a faint glow drift) so a resting board
+## still breathes. Offsets the SPRITE/GLOW locally — never the gem's own position,
+## which the board owns for swaps/gravity — so it can't fight any move tween.
+func _process(delta: float) -> void:
+	if _sprite == null:
+		return
+	_bob += delta
+	var off := sin(_bob * 1.7 + _phase) * 2.4
+	var sway := cos(_bob * 1.1 + _phase) * 1.2
+	_sprite.position = Vector2(sway, off)
+	if _glow:
+		_glow.position = Vector2(sway * 0.5, off * 0.6)
 
 
 func _puff_pm() -> ParticleProcessMaterial:
