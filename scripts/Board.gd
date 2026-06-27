@@ -1,30 +1,43 @@
 class_name Board
 extends Node2D
-## The play grid: input, swap validation, match detection, cascading gravity,
-## refills, special "blast" pieces, and all the timing/juice that makes it feel
-## alive — shockwave rings, decaying screen shake, hit-stop, and announcer hooks.
+## The play grid, now LEVEL-DRIVEN. A `Level` supplies the board shape (mask),
+## jelly + crate blockers, the win objective, and a move budget. The board handles
+## input, swap validation, match detection, mask/crate-aware gravity + refill,
+## special "blast" pieces, jelly cracking, crate smashing, objective tracking,
+## win/lose — and all the juice (shockwave rings, screen shake, hit-stop).
 
 signal score_changed(total: int)
 signal combo_changed(combo: int)
 signal moves_changed(moves: int)
 signal shuffled()
+signal objective_changed(done: int, total: int, label: String)
+signal finished(won: bool)
 
-const COLS := 7
-const ROWS := 8
-const CELL := 96.0
-const GEM_SIZE := 84.0
 const NUM_TYPES := 6
-const START_MOVES := 30
+
+var level: Level                       # set before add_child()
+
+# Geometry (CELL/GEM_SIZE are computed per-level so any shape fits the screen).
+var COLS := 7
+var ROWS := 8
+var CELL := 96.0
+var GEM_SIZE := 84.0
 
 var _gem_shader: Shader = preload("res://shaders/gem.gdshader")
 var _ring_tex: Texture2D
 
 var _grid: Array = []          # _grid[col][row] -> Gem or null
+var _jelly: Array = []         # _jelly[col][row] -> int hp
+var _jelly_node: Array = []    # _jelly[col][row] -> Panel or null
+var _crate: Array = []         # _crate[col][row] -> int hp (0 = none)
+var _crate_node: Array = []    # node or null
 var _origin: Vector2           # world position of cell (0,0) centre
 var _selected: Gem = null
 var _busy := false
+var _ended := false
 var _score := 0
-var _moves := START_MOVES
+var _moves := 25
+var _collected := 0            # for COLLECT objective
 var _shake_trauma := 0.0
 var _base_pos := Vector2.ZERO
 
@@ -35,24 +48,65 @@ var _swiped := false
 
 
 func _ready() -> void:
+	if level == null:
+		level = Level.builtins()[0]
+	COLS = level.cols
+	ROWS = level.rows
+	# Fit the board into the play area (below the HUD) at any size.
+	CELL = min(96.0, (720.0 - 48.0) / COLS, 900.0 / ROWS)
+	GEM_SIZE = CELL * 0.875
 	var board_w := COLS * CELL
-	_origin = Vector2((720.0 - board_w) * 0.5 + CELL * 0.5, 372.0)
+	var board_h := ROWS * CELL
+	var area_top := 300.0
+	var area_bottom := 1240.0
+	var top_y: float = area_top + max(0.0, (area_bottom - area_top - board_h) * 0.5)
+	_origin = Vector2((720.0 - board_w) * 0.5 + CELL * 0.5, top_y + CELL * 0.5)
+
 	_ring_tex = _opt_tex("res://assets/particles/ring.png")
+	_alloc_grids()
 	_draw_frame()
-	_grid.resize(COLS)
-	for c in COLS:
-		_grid[c] = []
-		_grid[c].resize(ROWS)
+	_place_blockers()
 	_initial_fill()
+
+	_moves = level.moves
 	emit_signal("score_changed", _score)
 	emit_signal("moves_changed", _moves)
-	# Kick the game off with an excited "Let's go!" once the board has rained in.
+	_emit_objective()
+
 	await get_tree().create_timer(0.7).timeout
 	Announcer.say("go", 1.0, 3.0)
 
 
+func _alloc_grids() -> void:
+	_grid = _new_grid(null)
+	_jelly = _new_grid(0)
+	_jelly_node = _new_grid(null)
+	_crate = _new_grid(0)
+	_crate_node = _new_grid(null)
+
+
+func _new_grid(fill) -> Array:
+	var g: Array = []
+	g.resize(COLS)
+	for c in COLS:
+		var col: Array = []
+		col.resize(ROWS)
+		col.fill(fill)
+		g[c] = col
+	return g
+
+
 func _opt_tex(path: String) -> Texture2D:
 	return load(path) if ResourceLoader.exists(path) else null
+
+
+func _playable(c: int, r: int) -> bool:
+	return level.playable(c, r)
+
+
+## A cell a gem can rest in: playable and not blocked by a crate.
+func _open(c: int, r: int) -> bool:
+	return _playable(c, r) and _crate[c][r] == 0
 
 
 # ---------------------------------------------------------------- geometry ---
@@ -70,23 +124,24 @@ func _gem_at_point(p: Vector2) -> Gem:
 
 
 func _draw_frame() -> void:
-	# Soft rounded play-field panel behind the gems.
-	var panel := Panel.new()
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0, 0, 0, 0.22)
-	style.set_corner_radius_all(28)
-	style.set_border_width_all(2)
-	style.border_color = Color(1, 1, 1, 0.10)
-	style.expand_margin_top = 18
-	style.expand_margin_bottom = 18
-	style.expand_margin_left = 18
-	style.expand_margin_right = 18
-	panel.add_theme_stylebox_override("panel", style)
-	var top_left := _cell_pos(0, 0) - Vector2(CELL, CELL) * 0.5
-	panel.position = top_left
-	panel.size = Vector2(COLS * CELL, ROWS * CELL)
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(panel)
+	# A soft rounded panel hugging only the playable cells (per-cell, so odd board
+	# shapes still read as a single field).
+	var holder := Node2D.new()
+	holder.z_index = -6
+	add_child(holder)
+	for c in COLS:
+		for r in ROWS:
+			if not _playable(c, r):
+				continue
+			var p := Panel.new()
+			var st := StyleBoxFlat.new()
+			st.bg_color = Color(0, 0, 0, 0.22)
+			st.set_corner_radius_all(14)
+			p.add_theme_stylebox_override("panel", st)
+			p.position = _cell_pos(c, r) - Vector2(CELL, CELL) * 0.5 + Vector2(3, 3)
+			p.size = Vector2(CELL - 6, CELL - 6)
+			p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			holder.add_child(p)
 
 
 # ------------------------------------------------------------------- fill ---
@@ -104,9 +159,10 @@ func _make_gem(type: int, c: int, r: int) -> Gem:
 func _initial_fill() -> void:
 	for c in COLS:
 		for r in ROWS:
+			if not _open(c, r):
+				continue
 			var type := _safe_type(c, r)
 			var g := _make_gem(type, c, r)
-			# Cascade them in from the top for a satisfying entrance.
 			var from := _cell_pos(c, r) - Vector2(0, (ROWS + 2) * CELL)
 			g.position = from
 			g.move_to(_cell_pos(c, r), 0.5, (c + r) * 0.03, Tween.TRANS_BACK)
@@ -130,9 +186,74 @@ func _safe_type(c: int, r: int) -> int:
 	return 0
 
 
+# ----------------------------------------------------------------- blockers ---
+func _place_blockers() -> void:
+	for c in COLS:
+		for r in ROWS:
+			if not _playable(c, r):
+				continue
+			var jl: int = int(level.jelly[c][r])
+			if jl > 0:
+				_jelly[c][r] = jl
+				_jelly_node[c][r] = _make_jelly(c, r, jl)
+			var cr: int = int(level.crate[c][r])
+			if cr > 0:
+				_crate[c][r] = cr
+				_crate_node[c][r] = _make_crate(c, r, cr)
+
+
+## Translucent jelly tile that sits UNDER the gems. Thicker jelly = brighter.
+func _make_jelly(c: int, r: int, hp: int) -> Panel:
+	var p := Panel.new()
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.35, 0.85, 1.0, 0.20 + 0.16 * hp)
+	st.set_corner_radius_all(16)
+	st.set_border_width_all(2 + hp)
+	st.border_color = Color(0.7, 0.95, 1.0, 0.55)
+	p.add_theme_stylebox_override("panel", st)
+	p.position = _cell_pos(c, r) - Vector2(CELL, CELL) * 0.5 + Vector2(4, 4)
+	p.size = Vector2(CELL - 8, CELL - 8)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.z_index = -4
+	p.pivot_offset = p.size * 0.5
+	add_child(p)
+	# A slow shimmer so the glaze feels wet.
+	var t := create_tween().set_loops()
+	t.tween_property(p, "modulate:a", 0.7, 1.1).set_trans(Tween.TRANS_SINE)
+	t.tween_property(p, "modulate:a", 1.0, 1.1).set_trans(Tween.TRANS_SINE)
+	return p
+
+
+## A static wooden crate blocker. hp 2 looks reinforced.
+func _make_crate(c: int, r: int, hp: int) -> Control:
+	var p := Panel.new()
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.55, 0.36, 0.18) if hp == 1 else Color(0.45, 0.29, 0.14)
+	st.set_corner_radius_all(8)
+	st.set_border_width_all(4)
+	st.border_color = Color(0.30, 0.18, 0.08)
+	p.add_theme_stylebox_override("panel", st)
+	p.position = _cell_pos(c, r) - Vector2(CELL, CELL) * 0.5 + Vector2(5, 5)
+	p.size = Vector2(CELL - 10, CELL - 10)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.z_index = 2
+	p.pivot_offset = p.size * 0.5
+	add_child(p)
+	var glyph := Label.new()
+	glyph.text = "▦" if hp == 1 else "▣"
+	glyph.add_theme_font_size_override("font_size", int(CELL * 0.5))
+	glyph.add_theme_color_override("font_color", Color(0.86, 0.70, 0.45, 0.9))
+	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	glyph.size = p.size
+	glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(glyph)
+	return p
+
+
 # ------------------------------------------------------------------ input ---
 func _unhandled_input(event: InputEvent) -> void:
-	if _busy:
+	if _busy or _ended:
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -179,7 +300,7 @@ func _attempt_dir(g: Gem, delta: Vector2) -> void:
 		dr = 1 if delta.y > 0 else -1
 	var nc := g.col + dc
 	var nr := g.row + dr
-	if nc < 0 or nc >= COLS or nr < 0 or nr >= ROWS:
+	if nc < 0 or nc >= COLS or nr < 0 or nr >= ROWS or _grid[nc][nr] == null:
 		return
 	_clear_selection()
 	_try_swap(g, _grid[nc][nr])
@@ -226,7 +347,6 @@ func _try_swap(a: Gem, b: Gem) -> void:
 	var matches := _find_matches()
 	var has_special := a.special != Gem.NONE or b.special != Gem.NONE
 	if matches.is_empty() and not has_special:
-		# Invalid: swap back with a little shake.
 		Audio.play("invalid")
 		_shake(3.0)
 		_swap_in_grid(a, b)
@@ -240,13 +360,12 @@ func _try_swap(a: Gem, b: Gem) -> void:
 	emit_signal("moves_changed", _moves)
 	await _resolve(a, b)
 	_busy = false
+	_check_endgame()
 
 
 # --------------------------------------------------------------- matching ---
-## Returns an Array of "runs": each run is a Dictionary { cells:[Vector2i], len:int }.
 func _find_runs() -> Array:
 	var runs: Array = []
-	# Horizontal.
 	for r in ROWS:
 		var c := 0
 		while c < COLS:
@@ -262,7 +381,6 @@ func _find_runs() -> Array:
 			if run.size() >= 3:
 				runs.append({"cells": run, "len": run.size(), "horiz": true})
 			c = cc
-	# Vertical.
 	for c in COLS:
 		var r := 0
 		while r < ROWS:
@@ -303,14 +421,11 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 
 		combo += 1
 		emit_signal("combo_changed", combo)
-		# Each cascade step rings a semitone higher — the satisfying combo ladder.
 		Audio.play("match", pow(2.0, min(combo - 1, 12) / 12.0))
-		# The excited announcer + big combo text take over from combo 2 up.
 		if combo >= 2:
 			Announcer.hype(combo)
 
-		# Decide which cells become new special pieces (don't clear those).
-		var survivors := {}    # Vector2i -> kind
+		var survivors := {}
 		for run in runs:
 			if run["len"] < 4:
 				continue
@@ -321,18 +436,18 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 			else:
 				survivors[cell] = kind
 
-		# Expand the clear set through any triggered specials.
 		_expand_specials(matched)
 		for cell in survivors:
 			matched.erase(cell)
 
-		# Score: rewards big groups and deep cascades.
 		var gained := matched.size() * 30 * combo
 		_score += gained
 		emit_signal("score_changed", _score)
 		_spawn_score_popup(matched, gained, combo)
 
-		# Spectacle scaled to the size + depth of the clear.
+		# Objective + blocker bookkeeping for everything in the clear set.
+		_apply_clears(matched)
+
 		var centroid := _centroid(matched)
 		var big := matched.size() >= 5 or combo >= 3
 		_shockwave(centroid, _combo_color(combo),
@@ -340,17 +455,14 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 		if combo >= 2:
 			_shake(2.5 + combo * 1.6)
 		if big:
-			# A quick hit-stop sells the impact on the meaty clears.
 			_hitstop(0.06, 0.07)
 
-		# Pop everything in the clear set.
 		for cell in matched:
 			var g: Gem = _grid[cell.x][cell.y]
 			if g:
 				_grid[cell.x][cell.y] = null
 				g.pop()
 
-		# Forge the new specials.
 		if not survivors.is_empty():
 			Audio.play("special")
 			for cell in survivors:
@@ -362,14 +474,79 @@ func _resolve(swap_a: Gem, swap_b: Gem) -> void:
 					else:
 						Announcer.say("sweet", 1.05, 1.0)
 
+		_emit_objective()
 		await get_tree().create_timer(0.18).timeout
 		await _collapse_and_refill()
 
 	emit_signal("combo_changed", 0)
-	if _moves <= 0:
+	if _ended:
 		return
 	if not _has_possible_move():
 		await _reshuffle()
+
+
+## Crack jelly, count collected colours, and damage adjacent crates for a clear set.
+func _apply_clears(matched: Dictionary) -> void:
+	for cell in matched:
+		var c: int = cell.x
+		var r: int = cell.y
+		if _jelly[c][r] > 0:
+			_jelly[c][r] -= 1
+			_update_jelly(c, r)
+		var g: Gem = _grid[c][r]
+		if g and level.obj_type == Level.OBJ_COLLECT and g.type == level.obj_color:
+			_collected += 1
+	# Crates take damage from any matched cell orthogonally adjacent to them.
+	for c in COLS:
+		for r in ROWS:
+			if _crate[c][r] <= 0:
+				continue
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if matched.has(Vector2i(c + d.x, r + d.y)):
+					_damage_crate(c, r)
+					break
+
+
+func _update_jelly(c: int, r: int) -> void:
+	var node: Panel = _jelly_node[c][r]
+	if node == null:
+		return
+	if _jelly[c][r] <= 0:
+		_jelly_node[c][r] = null
+		var t := create_tween()
+		t.tween_property(node, "modulate:a", 0.0, 0.2)
+		t.parallel().tween_property(node, "scale", Vector2.ONE * 1.4, 0.2)
+		t.chain().tween_callback(node.queue_free)
+		_shockwave(_cell_pos(c, r), Color("#9be8ff"), 1.0)
+	else:
+		# Down a layer: dim it and pop.
+		var st: StyleBoxFlat = node.get_theme_stylebox("panel")
+		st.bg_color.a = 0.20 + 0.16 * _jelly[c][r]
+		var t := create_tween()
+		t.tween_property(node, "scale", Vector2.ONE * 0.85, 0.08)
+		t.tween_property(node, "scale", Vector2.ONE, 0.12).set_trans(Tween.TRANS_ELASTIC)
+
+
+func _damage_crate(c: int, r: int) -> void:
+	_crate[c][r] -= 1
+	var node: Control = _crate_node[c][r]
+	if _crate[c][r] <= 0:
+		_crate_node[c][r] = null
+		_shake(4.0)
+		Audio.play("land", 0.7, 0.0)
+		_shockwave(_cell_pos(c, r), Color("#e7b56a"), 1.4)
+		if node:
+			var t := create_tween()
+			t.tween_property(node, "scale", Vector2.ONE * 1.3, 0.1)
+			t.parallel().tween_property(node, "modulate:a", 0.0, 0.2)
+			t.parallel().tween_property(node, "rotation", randf_range(-0.5, 0.5), 0.2)
+			t.chain().tween_callback(node.queue_free)
+	elif node:
+		var st: StyleBoxFlat = node.get_theme_stylebox("panel")
+		st.bg_color = Color(0.55, 0.36, 0.18)
+		var t := create_tween()
+		t.tween_property(node, "scale", Vector2.ONE * 0.86, 0.06)
+		t.tween_property(node, "scale", Vector2.ONE, 0.12).set_trans(Tween.TRANS_ELASTIC)
 
 
 func _pick_survivor(run: Dictionary, a: Gem, b: Gem) -> Vector2i:
@@ -381,7 +558,6 @@ func _pick_survivor(run: Dictionary, a: Gem, b: Gem) -> Vector2i:
 	return run["cells"][run["cells"].size() / 2]
 
 
-## BFS over specials inside the clear set, adding the cells each one blasts.
 func _expand_specials(matched: Dictionary) -> void:
 	var queue: Array = []
 	for cell in matched.keys():
@@ -409,13 +585,13 @@ func _expand_specials(matched: Dictionary) -> void:
 					if _grid[c][r] and _grid[c][r].type == g.type:
 						targets.append(Vector2i(c, r))
 		for t in targets:
+			if not _open(t.x, t.y):
+				continue
 			matched[t] = true
 			var tg: Gem = _grid[t.x][t.y]
 			if tg and tg.special != Gem.NONE and not done.has(t):
 				queue.append(t)
 	if not done.is_empty():
-		# A blast is the loudest beat in the game: heavy shake, big shockwave,
-		# announcer "Ka-boom!", and the music ducks so it cuts through.
 		_shake(9.0)
 		_hitstop(0.05, 0.09)
 		Audio.play("blast")
@@ -427,45 +603,78 @@ func _expand_specials(matched: Dictionary) -> void:
 
 
 # ----------------------------------------------------- gravity & refill ---
+## Mask- and crate-aware gravity. Each column is split into vertical SEGMENTS by
+## holes and crates; gems compact down within a segment. A segment that is open to
+## the sky (top at row 0) refills by raining gems in; a segment trapped below a
+## barrier pops new gems in directly so the board can never soft-lock.
 func _collapse_and_refill() -> void:
 	var longest := 0.0
 	for c in COLS:
-		# Compact existing gems downward.
-		var write := ROWS - 1
-		for r in range(ROWS - 1, -1, -1):
-			var g: Gem = _grid[c][r]
-			if g:
-				if write != r:
-					_grid[c][write] = g
-					_grid[c][r] = null
-					g.row = write
-					var dist: int = write - r
-					g.move_to(_cell_pos(c, write), 0.16 + dist * 0.035, 0.0, Tween.TRANS_BOUNCE)
-					longest = max(longest, 0.16 + dist * 0.035)
-				write -= 1
-		# Spawn new gems above the board to fill the gap.
-		var spawn := 0
-		for r in range(write, -1, -1):
-			var type := randi() % NUM_TYPES
-			var g := Gem.new()
-			g.setup(type, GEM_SIZE, _gem_shader)
-			g.col = c
-			g.row = r
-			g.position = _cell_pos(c, -1 - spawn)
-			add_child(g)
-			_grid[c][r] = g
-			var dur := 0.28 + (r + spawn) * 0.03
-			g.move_to(_cell_pos(c, r), dur, spawn * 0.02, Tween.TRANS_BOUNCE)
-			longest = max(longest, dur)
-			spawn += 1
-	# A soft thud when the wave of gems settles into place.
+		var r := ROWS - 1
+		while r >= 0:
+			if not _open(c, r):
+				r -= 1
+				continue
+			var bottom := r
+			var top := r
+			while top - 1 >= 0 and _open(c, top - 1):
+				top -= 1
+			longest = max(longest, _settle_segment(c, top, bottom))
+			r = top - 1
 	Audio.play("land", randf_range(0.95, 1.05), -4.0)
 	await get_tree().create_timer(longest + 0.05).timeout
 
 
+func _settle_segment(c: int, top: int, bottom: int) -> float:
+	var longest := 0.0
+	# Collect surviving gems top->bottom, clearing their slots.
+	var gems: Array = []
+	for r in range(top, bottom + 1):
+		if _grid[c][r]:
+			gems.append(_grid[c][r])
+			_grid[c][r] = null
+	# Drop them to the bottom of the segment.
+	var write := bottom
+	for i in range(gems.size() - 1, -1, -1):
+		var g: Gem = gems[i]
+		_grid[c][write] = g
+		if g.row != write:
+			var dist: int = write - g.row
+			g.row = write
+			g.move_to(_cell_pos(c, write), 0.16 + dist * 0.035, 0.0, Tween.TRANS_BOUNCE)
+			longest = max(longest, 0.16 + dist * 0.035)
+		write -= 1
+	# Refill the empty top of the segment (write..top).
+	var sky := (top == 0)
+	var spawn := 0
+	for r in range(write, top - 1, -1):
+		var type := randi() % NUM_TYPES
+		var g := Gem.new()
+		g.setup(type, GEM_SIZE, _gem_shader)
+		g.col = c
+		g.row = r
+		_grid[c][r] = g
+		add_child(g)
+		if sky:
+			g.position = _cell_pos(c, -1 - spawn)
+			var dur := 0.28 + (r + spawn) * 0.03
+			g.move_to(_cell_pos(c, r), dur, spawn * 0.02, Tween.TRANS_BOUNCE)
+			longest = max(longest, dur)
+		else:
+			# Trapped pocket — pop in place from nothing.
+			g.position = _cell_pos(c, r)
+			g._sprite.scale = Vector2.ZERO
+			var base := Vector2.ONE * (GEM_SIZE / 8.0)
+			var t := create_tween()
+			t.tween_property(g._sprite, "scale", base, 0.22)\
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			longest = max(longest, 0.22)
+		spawn += 1
+	return longest
+
+
 # ----------------------------------------------------------- no-moves AI ---
 func _has_possible_move() -> bool:
-	# Try every adjacent swap on a virtual copy; any 3-match means a move exists.
 	for c in COLS:
 		for r in ROWS:
 			if c + 1 < COLS and _swap_makes_match(c, r, c + 1, r):
@@ -490,7 +699,6 @@ func _swap_makes_match(c1: int, r1: int, c2: int, r2: int) -> bool:
 
 func _cell_in_match(c: int, r: int) -> bool:
 	var t: int = _grid[c][r].type
-	# Horizontal run length through (c,r).
 	var h := 1
 	var k := c - 1
 	while k >= 0 and _grid[k][r] and _grid[k][r].type == t:
@@ -513,31 +721,76 @@ func _cell_in_match(c: int, r: int) -> bool:
 func _reshuffle() -> void:
 	emit_signal("shuffled")
 	Audio.play("shuffle")
-	# Re-roll types in place until at least one move exists and no instant matches.
-	for _i in 40:
-		for c in COLS:
-			for r in ROWS:
-				_grid[c][r].type = randi() % NUM_TYPES
+	var slots: Array = []
+	for c in COLS:
+		for r in ROWS:
+			if _grid[c][r]:
+				slots.append(Vector2i(c, r))
+	for _i in 60:
+		for cell in slots:
+			_grid[cell.x][cell.y].type = randi() % NUM_TYPES
 		if _find_matches().is_empty() and _has_possible_move():
 			break
-	# Re-skin every gem and bounce them to advertise the shuffle.
-	for c in COLS:
-		for r in ROWS:
-			var g: Gem = _grid[c][r]
-			g.queue_free()
-			_grid[c][r] = null
+	for cell in slots:
+		var g: Gem = _grid[cell.x][cell.y]
+		g.queue_free()
+		_grid[cell.x][cell.y] = null
 	await get_tree().process_frame
-	for c in COLS:
-		for r in ROWS:
-			var g := _make_gem(randi() % NUM_TYPES, c, r)
-			g.position = _cell_pos(c, r) - Vector2(0, (ROWS + 2) * CELL)
-			g.move_to(_cell_pos(c, r), 0.5, (c + r) * 0.02, Tween.TRANS_BACK)
+	for cell in slots:
+		var g := _make_gem(randi() % NUM_TYPES, cell.x, cell.y)
+		g.position = _cell_pos(cell.x, cell.y) - Vector2(0, (ROWS + 2) * CELL)
+		g.move_to(_cell_pos(cell.x, cell.y), 0.5, (cell.x + cell.y) * 0.02, Tween.TRANS_BACK)
 	await get_tree().create_timer(0.6).timeout
 
 
+# --------------------------------------------------------------- objective ---
+func _objective_progress() -> Array:
+	# Returns [done, total, label].
+	match level.obj_type:
+		Level.OBJ_JELLY:
+			var total := level.jelly_total()
+			var rem := 0
+			for c in COLS:
+				for r in ROWS:
+					rem += _jelly[c][r]
+			return [total - rem, total, "Clear Jelly"]
+		Level.OBJ_CRATES:
+			var total := level.crate_total()
+			var rem := 0
+			for c in COLS:
+				for r in ROWS:
+					if _crate[c][r] > 0:
+						rem += 1
+			return [total - rem, total, "Smash Crates"]
+		Level.OBJ_COLLECT:
+			var cname: String = ["Rose", "Amber", "Jade", "Azure", "Violet", "Diamond"][level.obj_color]
+			return [min(_collected, level.obj_count), level.obj_count, "Collect %s" % cname]
+		_:
+			return [min(_score, level.obj_count), level.obj_count, "Score"]
+
+
+func _emit_objective() -> void:
+	var p := _objective_progress()
+	emit_signal("objective_changed", p[0], p[1], p[2])
+
+
+func _objective_met() -> bool:
+	var p := _objective_progress()
+	return p[0] >= p[1]
+
+
+func _check_endgame() -> void:
+	if _ended:
+		return
+	if _objective_met():
+		_ended = true
+		emit_signal("finished", true)
+	elif _moves <= 0:
+		_ended = true
+		emit_signal("finished", false)
+
+
 # ------------------------------------------------------------------- juice ---
-## Trauma-based decaying shake — punchier and more organic than a fixed wiggle.
-## Calls accumulate trauma; _process bleeds it off and offsets the whole board.
 func _shake(amount: float) -> void:
 	_shake_trauma = min(_shake_trauma + amount, 16.0)
 
@@ -552,8 +805,6 @@ func _process(delta: float) -> void:
 
 
 func _hitstop(scale: float, dur: float) -> void:
-	# Brief world-freeze for impact. Uses an ignore-time-scale timer so it always
-	# restores even though everything else is frozen.
 	Engine.time_scale = scale
 	await get_tree().create_timer(dur, true, false, true).timeout
 	Engine.time_scale = 1.0
@@ -576,7 +827,6 @@ func _combo_color(combo: int) -> Color:
 	return palette[clampi(combo - 1, 0, palette.size() - 1)]
 
 
-## An expanding bright ring at a clear — the classic match-3 shockwave.
 func _shockwave(world_pos: Vector2, color: Color, scale_to: float) -> void:
 	if _ring_tex == null:
 		return
@@ -603,7 +853,6 @@ func _spawn_score_popup(cells: Dictionary, amount: int, combo: int) -> void:
 	if cells.is_empty():
 		return
 	var avg := _centroid(cells)
-
 	var lbl := Label.new()
 	lbl.text = ("+%d" % amount) if combo < 2 else ("+%d  x%d" % [amount, combo])
 	lbl.add_theme_font_size_override("font_size", 30 + combo * 6)
