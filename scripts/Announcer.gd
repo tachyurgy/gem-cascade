@@ -30,6 +30,7 @@ var _players: Array[AudioStreamPlayer] = []
 var _vnext := 0
 var _flash: ColorRect
 var _last_idx := -1
+var _last_voice_ms := -9999   # throttles back-to-back combo callouts so each is heard
 
 
 func _ready() -> void:
@@ -39,7 +40,7 @@ func _ready() -> void:
 	_font = load(FONT_PATH)
 
 	# A pool of players so overlapping callouts during fast cascades don't cut off.
-	for _i in 6:
+	for _i in 8:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Master"
 		p.volume_db = 1.0
@@ -69,12 +70,21 @@ func _ready() -> void:
 func say(key: String, pitch: float = 1.0, vol_db: float = 1.0) -> void:
 	if Audio.muted or not _voices.has(key):
 		return
-	var p := _players[_vnext]
-	_vnext = (_vnext + 1) % _players.size()
+	var p := _free_player()
 	p.stream = _voices[key]
 	p.pitch_scale = pitch
 	p.volume_db = vol_db
 	p.play()
+
+
+## Prefer an idle player so an in-progress callout is never chopped mid-word.
+func _free_player() -> AudioStreamPlayer:
+	for p in _players:
+		if not p.playing:
+			return p
+	var p := _players[_vnext]
+	_vnext = (_vnext + 1) % _players.size()
+	return p
 
 
 # The headline call: combo >= 2 fires an escalating shout + big text + flash.
@@ -88,8 +98,13 @@ func hype(combo: int) -> void:
 	var text: String = tier["texts"][pick]
 	var color: Color = tier["color"]
 	var size: int = tier["size"]
-	# Pitch the voice up a touch as combos climb — energy ramp.
-	say(tier["voices"][pick], 1.0 + idx * 0.03, 2.0)
+	# The big text + flash fire on every combo step, but the VOICE is throttled to
+	# ~0.5s spacing — back-to-back cascade callouts otherwise stack and chop each
+	# other into noise. Higher tiers always get to speak (they're the payoff).
+	var now := Time.get_ticks_msec()
+	if now - _last_voice_ms > 480 or idx >= 3:
+		_last_voice_ms = now
+		say(tier["voices"][pick], 1.0 + idx * 0.03, 2.0)
 	bigtext(text, color, size, idx)
 	flash(color, 0.12 + idx * 0.06)
 

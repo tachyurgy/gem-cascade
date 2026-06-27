@@ -40,6 +40,8 @@ var _moves := 25
 var _collected := 0            # for COLLECT objective
 var _shake_trauma := 0.0
 var _base_pos := Vector2.ZERO
+var hitstop_enabled := true     # recorder turns this off for a freeze-proof capture
+var _hitstop_token := 0
 
 # Pointer/swipe tracking.
 var _press_gem: Gem = null
@@ -217,8 +219,11 @@ func _make_jelly(c: int, r: int, hp: int) -> Panel:
 	p.z_index = -4
 	p.pivot_offset = p.size * 0.5
 	add_child(p)
-	# A slow shimmer so the glaze feels wet.
-	var t := create_tween().set_loops()
+	# A slow shimmer so the glaze feels wet. Bound to the PANEL (not the board) so
+	# it is auto-killed when the jelly is cleared and the panel is freed — otherwise
+	# the loop dangles on a freed target and spins (an "infinite loop" that stalls
+	# deterministic movie-record stepping).
+	var t := p.create_tween().set_loops()
 	t.tween_property(p, "modulate:a", 0.7, 1.1).set_trans(Tween.TRANS_SINE)
 	t.tween_property(p, "modulate:a", 1.0, 1.1).set_trans(Tween.TRANS_SINE)
 	return p
@@ -550,10 +555,14 @@ func _damage_crate(c: int, r: int) -> void:
 
 
 func _pick_survivor(run: Dictionary, a: Gem, b: Gem) -> Vector2i:
+	# a/b are the swapped gems, but a deeper cascade step may already have cleared
+	# (freed) one of them — guard with is_instance_valid before touching col/row.
+	var a_ok := is_instance_valid(a)
+	var b_ok := is_instance_valid(b)
 	for cell in run["cells"]:
-		if a and cell == Vector2i(a.col, a.row):
+		if a_ok and cell == Vector2i(a.col, a.row):
 			return cell
-		if b and cell == Vector2i(b.col, b.row):
+		if b_ok and cell == Vector2i(b.col, b.row):
 			return cell
 	return run["cells"][run["cells"].size() / 2]
 
@@ -805,9 +814,16 @@ func _process(delta: float) -> void:
 
 
 func _hitstop(scale: float, dur: float) -> void:
+	if not hitstop_enabled:
+		return
+	# Token so overlapping hit-stops can't leave the engine stuck in slow-mo: only
+	# the most recent one restores full speed.
+	_hitstop_token += 1
+	var token := _hitstop_token
 	Engine.time_scale = scale
 	await get_tree().create_timer(dur, true, false, true).timeout
-	Engine.time_scale = 1.0
+	if token == _hitstop_token:
+		Engine.time_scale = 1.0
 
 
 func _centroid(cells: Dictionary) -> Vector2:
