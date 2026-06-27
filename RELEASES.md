@@ -1,5 +1,42 @@
 # Releases — Gem Cascade
 
+## 2026-06-26 — v3: living gems, level system + level editor, clean demo audio
+
+- **What deployed:** a fresh Web export to **https://gemcascade.levelbrook.com**
+  (Caddy static container on Box A) turning the endless score-attack into a
+  level-based puzzle with a built-in **level editor**, plus a "living gems" visual
+  pass and a re-recorded 28-second demo (`gem-cascade-prep/video/gem-cascade-v3-*`).
+- **Changed:**
+  - **Animated gems** — the fragment shader now gives every gem a per-gem random
+    phase that desyncs all motion: a 4-point star **twinkle** that blooms and
+    travels, slowly counter-rotating inner **facet/caustic** light planes, and a
+    gentle local **idle float** (`shaders/gem.gdshader`, `scripts/Gem.gd`). The
+    board sparkles like a treasure pile even at rest.
+  - **Level system** — a `Level` model (`scripts/Level.gd`) with a board **shape
+    mask** (non-rectangular boards), **jelly** and **crate** blockers, an
+    **objective** (Score / Clear Jelly / Collect colour / Smash Crates) and a tuned
+    **move budget**; JSON save/load to `user://levels` + a 4-level built-in campaign.
+  - **Board rewrite** (`scripts/Board.gd`) — mask/crate-aware segmented gravity that
+    can't soft-lock (trapped pockets pop-fill), jelly cracking, crate smashing from
+    adjacent matches, collect counting, objective progress + win/lose, result overlay.
+  - **Level editor** (`scripts/Editor.gd`) — paint board shape, stamp jelly/crate,
+    choose objective + collect-colour, tune moves, **Save** + instant **Playtest**.
+    A `Root` shell (`scripts/Root.gd`) switches menu ⇄ play ⇄ editor; a
+    `LevelSelect` lists the campaign + your authored levels.
+  - **Audio fix** — announcer voices now pick an idle player and combo callouts are
+    throttled to ~0.5s spacing, so fast cascades no longer chop each callout
+    mid-word (the "voices cut off" complaint). Hit-stop now restores reliably via a
+    token (no more wedged slow-mo).
+- **How:** `godot --headless --export-release "Web" build/web/index.html`
+  (single-threaded preset), then `rsync build/web/ root@5.78.108.109:/root/gemcascade/web/`
+  + `docker restart gemcascade-web`. Demo recorded via `--write-movie`.
+- **Verified:** live HTTP 200; `index.wasm` served `application/wasm` + gzip; pck
+  SHA matches the fresh export (804144 B, contains Root/Level/Editor/LevelSelect);
+  cached-Chromium runtime load = **0 page errors**, new level-select menu renders,
+  and clicking into the **editor + painting jelly works live**. (First export
+  silently reused the stale pck — caught because the live menu was still v2; fixed
+  by deleting `build/web/index.pck` and re-exporting.)
+
 ## 2026-06-26 — "Mega juice" spectacle pass (v2): voice announcer, real assets, bloom
 
 - **What deployed:** a re-export of the Web build to
